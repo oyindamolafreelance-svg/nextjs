@@ -86,12 +86,17 @@ except the "Connect" button and actual publishing.
 Set `CRON_SECRET` to a random string, then pick one:
 
 - **Vercel**: deploy the project; `vercel.json` already defines a cron
-  hitting `/api/cron/publish` every 15 minutes. Vercel injects
+  hitting `/api/cron/publish` once a day. Vercel injects
   `Authorization: Bearer $CRON_SECRET` automatically for cron-triggered
-  requests when `CRON_SECRET` is set as a project env var.
-- **Anywhere else**: use `.github/workflows/publish-scheduled-posts.yml`,
-  which calls the endpoint via `curl` on the same schedule. Set the
-  `APP_URL` and `CRON_SECRET` repository secrets.
+  requests when `CRON_SECRET` is set as a project env var. Vercel's free
+  (Hobby) plan only allows cron jobs to run once per day — the Pro plan
+  allows more frequent schedules, e.g. every 15 minutes, if you need
+  tighter timing on scheduled posts.
+- **Anywhere else, or for a tighter schedule on the free plan**: use
+  `.github/workflows/publish-scheduled-posts.yml`, which calls the
+  endpoint via `curl` every 15 minutes regardless of your Vercel plan.
+  Set the `APP_URL` and `CRON_SECRET` repository secrets (in the GitHub
+  repo's Settings → Secrets and variables → Actions) and it runs for free.
 
 You can also trigger it manually any time:
 `curl -H "Authorization: Bearer $CRON_SECRET" $APP_URL/api/cron/publish`
