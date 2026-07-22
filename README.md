@@ -1,36 +1,135 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Autopost
 
-## Getting Started
+Automates posting to TikTok and Facebook. Each **profile** is one platform
+account with its own niche and brand kit (tone, hashtags, colors, logo), so
+generated captions stay on-brand and consistent per account. Posts can be
+written manually or generated with AI, scheduled for later, and a cron job
+publishes anything due.
 
-First, run the development server:
+## How it fits together
+
+- **Next.js 16** app (App Router) — dashboard UI + API routes.
+- **Postgres** via Prisma 7 (driver adapters) — profiles, posts.
+- **TikTok Content Posting API** / **Facebook Graph API** — actual publishing.
+- **A cron trigger** (Vercel Cron or the included GitHub Action) hits
+  `/api/cron/publish` on a schedule; it publishes any post whose
+  `scheduledAt` is due.
+- **Anthropic API** (optional) — AI caption generation per profile's niche/tone;
+  falls back to a simple template if no key is set.
+- **Vercel Blob** (optional) — lets you upload media files from the compose
+  screen instead of pasting a hosted URL.
+
+## Setup
+
+### 1. Install and configure
+
+```bash
+npm install
+cp .env.example .env.local
+```
+
+Fill in `.env.local` — at minimum `DATABASE_URL` and `APP_SECRET` to run
+locally. See the comments in `.env.example` for what each variable does and
+where to get it.
+
+### 2. Database
+
+Create a free Postgres database (Supabase, Neon, or Vercel Postgres all
+work) and set `DATABASE_URL`. Then run:
+
+```bash
+npm run db:migrate
+```
+
+This applies `prisma/schema.prisma` and generates the Prisma client (into
+`lib/generated/prisma`, which is gitignored — it's regenerated on
+`npm install` via the `postinstall` script).
+
+### 3. Run locally
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open http://localhost:3000. Create a profile (platform + niche + brand kit),
+then a post. Without platform credentials configured yet, everything works
+except the "Connect" button and actual publishing.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### 4. Connect TikTok
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+1. Create an app at https://developers.tiktok.com/apps.
+2. Request the `user.info.basic` and `video.publish` scopes (Content Posting
+   API). New apps are typically **unaudited**, meaning they can only post
+   with `privacy_level: SELF_ONLY` (private/draft, visible only to you) —
+   this is what `TIKTOK_PRIVACY_LEVEL` defaults to. Apply for the public
+   posting scope when you're ready to go live.
+3. Set the app's redirect URI to `<APP_URL>/api/auth/tiktok/callback`.
+4. Set `TIKTOK_CLIENT_KEY` / `TIKTOK_CLIENT_SECRET`.
+5. On a profile's page, click **Connect TikTok**.
 
-## Learn More
+### 5. Connect Facebook
 
-To learn more about Next.js, take a look at the following resources:
+1. Create an app at https://developers.facebook.com/apps with **Facebook
+   Login** added.
+2. Request `pages_show_list`, `pages_manage_posts`, `pages_read_engagement`.
+   These need **App Review** before they work for anyone other than admins/
+   testers of the app — fine for personal use, required for anyone else.
+3. Set the app's OAuth redirect URI to `<APP_URL>/api/auth/facebook/callback`.
+4. Set `FACEBOOK_APP_ID` / `FACEBOOK_APP_SECRET`.
+5. On a profile's page, click **Connect Facebook**. The first Page returned
+   by your account is used automatically (multi-page selection isn't built
+   yet — if you manage several Pages, connect from an account/session where
+   the right one comes back first).
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### 6. Turn on scheduled publishing
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Set `CRON_SECRET` to a random string, then pick one:
 
-## Deploy on Vercel
+- **Vercel**: deploy the project; `vercel.json` already defines a cron
+  hitting `/api/cron/publish` every 15 minutes. Vercel injects
+  `Authorization: Bearer $CRON_SECRET` automatically for cron-triggered
+  requests when `CRON_SECRET` is set as a project env var.
+- **Anywhere else**: use `.github/workflows/publish-scheduled-posts.yml`,
+  which calls the endpoint via `curl` on the same schedule. Set the
+  `APP_URL` and `CRON_SECRET` repository secrets.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+You can also trigger it manually any time:
+`curl -H "Authorization: Bearer $CRON_SECRET" $APP_URL/api/cron/publish`
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### 7. Protect the dashboard
+
+Set `APP_PASSWORD` and `APP_SECRET` before deploying anywhere reachable from
+the internet — the app stores platform access tokens, so it shouldn't be
+left open. With `APP_PASSWORD` unset, the login gate is disabled (fine for
+local dev only).
+
+### 8. AI captions (optional)
+
+Set `ANTHROPIC_API_KEY` to enable the "Generate with AI" button on the
+compose screen — it writes a caption from the profile's niche, brand tone,
+and hashtags. Without a key, a simple template is used instead.
+
+### 9. Media uploads (optional)
+
+Create a Blob store in your Vercel project and set
+`BLOB_READ_WRITE_TOKEN` to enable direct file upload from the compose
+screen. Without it, paste a hosted media URL instead.
+
+## Known limitations
+
+- TikTok/Facebook video processing is async; if a publish is still
+  processing when the cron run finishes polling, the post is left in
+  `PUBLISHING` status rather than being auto-reconciled on a later run.
+- Facebook Page connection auto-selects the first Page returned by the API;
+  there's no in-app picker for accounts managing multiple Pages.
+- Single-tenant: one shared `APP_PASSWORD` gates the whole dashboard, there's
+  no per-user login.
+
+## Development
+
+```bash
+npm run dev      # dev server
+npm run build    # production build
+npm run lint     # eslint
+npm run db:studio  # browse the database
+```

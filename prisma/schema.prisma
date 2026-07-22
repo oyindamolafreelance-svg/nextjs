@@ -1,0 +1,79 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Platform {
+  TIKTOK
+  FACEBOOK
+}
+
+enum PostStatus {
+  DRAFT
+  SCHEDULED
+  PUBLISHING
+  PUBLISHED
+  FAILED
+}
+
+enum ContentSource {
+  MANUAL
+  AI_GENERATED
+}
+
+model Profile {
+  id       String   @id @default(cuid())
+  name     String
+  platform Platform
+  niche    String
+
+  // Brand kit - keeps generated content and visuals consistent per profile
+  brandTone     String?
+  brandColors   String[] @default([])
+  brandHashtags String[] @default([])
+  logoUrl       String?
+
+  // Platform connection
+  externalAccountId String?
+  externalPageId     String?
+  accountName        String?
+  accessToken        String?
+  refreshToken       String?
+  tokenExpiresAt      DateTime?
+  connected          Boolean   @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  posts Post[]
+
+  @@index([platform])
+}
+
+model Post {
+  id        String  @id @default(cuid())
+  profileId String
+  profile   Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  caption   String
+  mediaUrl  String?
+  mediaType String?
+
+  status PostStatus    @default(DRAFT)
+  source ContentSource @default(MANUAL)
+
+  scheduledAt    DateTime?
+  publishedAt    DateTime?
+  externalPostId String?
+  error          String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status, scheduledAt])
+  @@index([profileId])
+}
