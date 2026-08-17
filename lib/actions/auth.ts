@@ -1,33 +1,63 @@
 "use server";
 
-import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { signState } from "@/lib/state";
-import { SESSION_COOKIE, SESSION_TTL_MS } from "@/lib/session";
+import { createClient } from "@/lib/supabase/server";
 
-export async function login(formData: FormData) {
-  const password = String(formData.get("password") ?? "");
-  const next = String(formData.get("next") ?? "/") || "/";
-
-  if (!process.env.APP_PASSWORD || password !== process.env.APP_PASSWORD) {
-    redirect(`/login?next=${encodeURIComponent(next)}&error=1`);
-  }
-
-  const token = signState({ ok: "1", exp: String(Date.now() + SESSION_TTL_MS) });
-  const cookieStore = await cookies();
-  cookieStore.set(SESSION_COOKIE, token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/",
-    maxAge: SESSION_TTL_MS / 1000,
-  });
-
-  redirect(next);
+export interface AuthFormState {
+  error?: string;
 }
 
-export async function logout() {
-  const cookieStore = await cookies();
-  cookieStore.delete(SESSION_COOKIE);
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+export async function registerAction(
+  _prev: AuthFormState,
+  formData: FormData
+): Promise<AuthFormState> {
+  const fullName = String(formData.get("full_name") ?? "").trim();
+  const email = String(formData.get("email") ?? "").trim();
+  const password = String(formData.get("password") ?? "");
+
+  if (!fullName) return { error: "Please enter your name." };
+  if (!EMAIL_RE.test(email)) return { error: "Please enter a valid email address." };
+  if (password.length < 8) return { error: "Password must be at least 8 characters." };
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: { data: { full_name: fullName } },
+  });
+
+  if (error) return { error: error.message };
+
+  // With email confirmation disabled, sign-up returns a session and the user
+  // lands on the pending screen. With confirmation enabled, no session is
+  // returned — send them to log in once they've confirmed.
+  if (data.session) redirect("/pending");
+  redirect("/login?registered=1");
+}
+
+export async function loginAction(
+  _prev: AuthFormState,
+  formData: FormData
+): Promise<AuthFormState> {
+  const email = String(formData.get("email") ?? "").trim();
+  const password = String(formData.get("password") ?? "");
+  const next = String(formData.get("next") ?? "") || "/jobs";
+
+  if (!EMAIL_RE.test(email)) return { error: "Please enter a valid email address." };
+  if (!password) return { error: "Please enter your password." };
+
+  const supabase = await createClient();
+  const { error } = await supabase.auth.signInWithPassword({ email, password });
+
+  if (error) return { error: "Incorrect email or password." };
+
+  redirect(next.startsWith("/") ? next : "/jobs");
+}
+
+export async function logoutAction() {
+  const supabase = await createClient();
+  await supabase.auth.signOut();
   redirect("/login");
 }

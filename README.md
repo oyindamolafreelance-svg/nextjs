@@ -1,134 +1,139 @@
-# Autopost
+# LinguaBoard
 
-Automates posting to TikTok and Facebook. Each **profile** is one platform
-account with its own niche and brand kit (tone, hashtags, colors, logo), so
-generated captions stay on-brand and consistent per account. Posts can be
-written manually or generated with AI, scheduled for later, and a cron job
-publishes anything due.
+A private, invite-gated job board for the translation & localization niche.
+The site owner (admin) curates job postings found across the web (ProZ,
+LinkedIn, Google Jobs, agency career pages) and enters them here in a
+structured format. Approved members browse and apply; the public sees only a
+landing page and the registration form.
 
 ## How it fits together
 
-- **Next.js 16** app (App Router) — dashboard UI + API routes.
-- **Postgres** via Prisma 7 (driver adapters) — profiles, posts.
-- **TikTok Content Posting API** / **Facebook Graph API** — actual publishing.
-- **A cron trigger** (Vercel Cron or the included GitHub Action) hits
-  `/api/cron/publish` on a schedule; it publishes any post whose
-  `scheduledAt` is due.
-- **Anthropic API** (optional) — AI caption generation per profile's niche/tone;
-  falls back to a simple template if no key is set.
-- **Vercel Blob** (optional) — lets you upload media files from the compose
-  screen instead of pasting a hosted URL.
+- **Next.js 16** (App Router) — server-rendered pages + a couple of route
+  handlers.
+- **Supabase** — Postgres database, email/password auth, and Row Level
+  Security. RLS is the real access-control boundary; the app never trusts the
+  client.
+- **Anthropic API** — powers the admin "auto-fill from pasted text" helper on
+  the post-a-job form (parses raw postings into structured fields).
+- **Vercel** — hosting + a daily cron that expires stale listings.
+
+### Access model
+
+| Role | Sees |
+| --- | --- |
+| Public visitor | Landing page + `/register` + `/login` only |
+| Registered, pending | A "pending approval" screen |
+| Approved member | The full `/jobs` board (search + filter) |
+| Admin | Everything, plus approvals, post-a-job, and a stats dashboard |
+
+Gating is enforced in three layers: `proxy.ts` (optimistic redirects), the
+`lib/auth.ts` Data Access Layer (`requireApproved` / `requireAdmin`), and —
+authoritatively — Supabase RLS policies (`supabase/migrations/`).
 
 ## Setup
 
-### 1. Install and configure
+### 1. Install
 
 ```bash
 npm install
 cp .env.example .env.local
 ```
 
-Fill in `.env.local` — at minimum `DATABASE_URL` and `APP_SECRET` to run
-locally. See the comments in `.env.example` for what each variable does and
-where to get it.
+### 2. Create the Supabase project
 
-### 2. Database
+1. Create a free project at https://supabase.com.
+2. From **Settings → API**, copy the values into `.env.local`:
+   - `NEXT_PUBLIC_SUPABASE_URL`
+   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+   - `SUPABASE_SERVICE_ROLE_KEY` (server-only; used by the cron route)
+3. In **Authentication → Providers → Email**, keep email/password enabled.
+   For the smoothest flow described in the spec (register → log in → see the
+   pending screen), turn **"Confirm email" off**. With it on, users must click
+   an email link before their first login — the app handles both.
 
-Create a free Postgres database (Supabase, Neon, or Vercel Postgres all
-work) and set `DATABASE_URL`. Then run:
+### 3. Apply the database schema
 
-```bash
-npm run db:migrate
-```
+The schema and RLS policies live in `supabase/migrations/` and are the source
+of truth — don't make untracked changes in the dashboard.
 
-This applies `prisma/schema.prisma` and generates the Prisma client (into
-`lib/generated/prisma`, which is gitignored — it's regenerated on
-`npm install` via the `postinstall` script).
+- **Supabase CLI** (recommended): `supabase db push`
+- **Or** paste each file, in order, into the Supabase SQL editor:
+  1. `supabase/migrations/0001_initial_schema.sql`
+  2. `supabase/migrations/0002_rls_policies.sql`
 
-### 3. Run locally
+### 4. Create the admin
+
+Register through the app once (so the auth user + profile row exist), then run
+`supabase/promote-admin.sql` in the SQL editor with your email to set
+`is_admin` and `is_approved`.
+
+### 5. AI auto-fill (optional but recommended)
+
+Set `ANTHROPIC_API_KEY` to enable the "Auto-fill fields" button on
+`/admin/post-job`. `ANTHROPIC_MODEL` defaults to `claude-sonnet-4-6`. Without a
+key, the admin fills the form manually — nothing else is affected.
+
+### 6. Run locally
 
 ```bash
 npm run dev
 ```
 
-Open http://localhost:3000. Create a profile (platform + niche + brand kit),
-then a post. Without platform credentials configured yet, everything works
-except the "Connect" button and actual publishing.
+Open http://localhost:3000.
 
-### 4. Connect TikTok
+## Deployment (Vercel)
 
-1. Create an app at https://developers.tiktok.com/apps.
-2. Request the `user.info.basic` and `video.publish` scopes (Content Posting
-   API). New apps are typically **unaudited**, meaning they can only post
-   with `privacy_level: SELF_ONLY` (private/draft, visible only to you) —
-   this is what `TIKTOK_PRIVACY_LEVEL` defaults to. Apply for the public
-   posting scope when you're ready to go live.
-3. Set the app's redirect URI to `<APP_URL>/api/auth/tiktok/callback`.
-4. Set `TIKTOK_CLIENT_KEY` / `TIKTOK_CLIENT_SECRET`.
-5. On a profile's page, click **Connect TikTok**.
+1. Push this repo to GitHub and import it into Vercel.
+2. Add all the env vars from `.env.example` in the Vercel project settings.
+3. Deploy. The app is reachable at the free `*.vercel.app` URL. A custom
+   domain can be added later in Vercel's domain settings with **no code
+   changes** — the app derives no URLs from a hardcoded host.
 
-### 5. Connect Facebook
+### Auto-expiring listings
 
-1. Create an app at https://developers.facebook.com/apps with **Facebook
-   Login** added.
-2. Request `pages_show_list`, `pages_manage_posts`, `pages_read_engagement`.
-   These need **App Review** before they work for anyone other than admins/
-   testers of the app — fine for personal use, required for anyone else.
-3. Set the app's OAuth redirect URI to `<APP_URL>/api/auth/facebook/callback`.
-4. Set `FACEBOOK_APP_ID` / `FACEBOOK_APP_SECRET`.
-5. On a profile's page, click **Connect Facebook**. The first Page returned
-   by your account is used automatically (multi-page selection isn't built
-   yet — if you manage several Pages, connect from an account/session where
-   the right one comes back first).
+`vercel.json` schedules `/api/cron/expire-jobs` once a day (the maximum
+frequency on Vercel's free Hobby plan). It flips `is_active → false` for any
+listing whose `expires_at` has passed. Set `CRON_SECRET` so the route rejects
+unauthenticated calls — Vercel Cron sends it as a Bearer token automatically.
 
-### 6. Turn on scheduled publishing
+The board also hides expired listings at query time, so a lapsed listing
+disappears immediately even before the daily cron runs.
 
-Set `CRON_SECRET` to a random string, then pick one:
+You can trigger it manually:
 
-- **Vercel**: deploy the project; `vercel.json` already defines a cron
-  hitting `/api/cron/publish` once a day. Vercel injects
-  `Authorization: Bearer $CRON_SECRET` automatically for cron-triggered
-  requests when `CRON_SECRET` is set as a project env var. Vercel's free
-  (Hobby) plan only allows cron jobs to run once per day — the Pro plan
-  allows more frequent schedules, e.g. every 15 minutes, if you need
-  tighter timing on scheduled posts.
-- **Anywhere else, or for a tighter schedule on the free plan**: use
-  `.github/workflows/publish-scheduled-posts.yml`, which calls the
-  endpoint via `curl` every 15 minutes regardless of your Vercel plan.
-  Set the `APP_URL` and `CRON_SECRET` repository secrets (in the GitHub
-  repo's Settings → Secrets and variables → Actions) and it runs for free.
+```bash
+curl -H "Authorization: Bearer $CRON_SECRET" \
+  https://your-app.vercel.app/api/cron/expire-jobs
+```
 
-You can also trigger it manually any time:
-`curl -H "Authorization: Bearer $CRON_SECRET" $APP_URL/api/cron/publish`
+## Project structure
 
-### 7. Protect the dashboard
+```
+app/
+  page.tsx                 Landing page
+  register/ login/         Auth (Supabase email/password)
+  pending/                 "Awaiting approval" screen
+  jobs/                    Member job board (search + filter)
+  admin/approvals/         Approve pending registrations
+  admin/post-job/          Job form + AI auto-fill
+  admin/dashboard/         Stats
+  api/parse-job/           Anthropic-backed auto-fill (admin only)
+  api/cron/expire-jobs/    Daily expiry sweep
+lib/
+  supabase/                server / browser / admin clients
+  auth.ts                  Data Access Layer + role guards
+  actions/                 Server actions (auth, approvals, job posting)
+  ai/parse-job.ts          Anthropic call for the auto-fill helper
+supabase/migrations/       Schema + RLS (source of truth)
+```
 
-Set `APP_PASSWORD` and `APP_SECRET` before deploying anywhere reachable from
-the internet — the app stores platform access tokens, so it shouldn't be
-left open. With `APP_PASSWORD` unset, the login gate is disabled (fine for
-local dev only).
+## Scope
 
-### 8. AI captions (optional)
+**Built (v1):** registration + login + admin approval, job board with
+search/filter, admin job posting with AI auto-fill, auto-expiry, admin stats.
 
-Set `ANTHROPIC_API_KEY` to enable the "Generate with AI" button on the
-compose screen — it writes a caption from the profile's niche, brand tone,
-and hashtags. Without a key, a simple template is used instead.
-
-### 9. Media uploads (optional)
-
-Create a Blob store in your Vercel project and set
-`BLOB_READ_WRITE_TOKEN` to enable direct file upload from the compose
-screen. Without it, paste a hosted media URL instead.
-
-## Known limitations
-
-- TikTok/Facebook video processing is async; if a publish is still
-  processing when the cron run finishes polling, the post is left in
-  `PUBLISHING` status rather than being auto-reconciled on a later run.
-- Facebook Page connection auto-selects the first Page returned by the API;
-  there's no in-app picker for accounts managing multiple Pages.
-- Single-tenant: one shared `APP_PASSWORD` gates the whole dashboard, there's
-  no per-user login.
+**Not built yet (v2):** duplicate-listing detection, weekly email digest
+(Resend), and member bookmarks — left as clean extension points.
 
 ## Development
 
@@ -136,5 +141,4 @@ screen. Without it, paste a hosted media URL instead.
 npm run dev      # dev server
 npm run build    # production build
 npm run lint     # eslint
-npm run db:studio  # browse the database
 ```
