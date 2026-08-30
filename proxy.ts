@@ -1,35 +1,61 @@
-import { NextResponse } from "next/server";
-import type { NextRequest } from "next/server";
-import { verifyState } from "@/lib/state";
-import { SESSION_COOKIE } from "@/lib/session";
+import { NextResponse, type NextRequest } from "next/server";
+import { createServerClient } from "@supabase/ssr";
 
-export function proxy(request: NextRequest) {
-  // No password configured: gate is disabled (fine for local dev, not for a public deploy).
-  if (!process.env.APP_PASSWORD) {
-    return NextResponse.next();
+// Proxy (Next 16's renamed Middleware). Two jobs:
+//   1. Refresh the Supabase auth session cookie on every request so Server
+//      Components always see a valid session.
+//   2. Optimistic redirects: bounce signed-out visitors away from gated
+//      routes. This is a coarse gate only — real authorization (approved /
+//      admin) is enforced in the Data Access Layer and by RLS.
+export async function proxy(request: NextRequest) {
+  let response = NextResponse.next({ request });
+
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  // If Supabase isn't configured yet, don't block the app (e.g. first deploy).
+  if (!url || !anonKey) return response;
+
+  const supabase = createServerClient(url, anonKey, {
+    cookies: {
+      getAll() {
+        return request.cookies.getAll();
+      },
+      setAll(cookiesToSet) {
+        for (const { name, value } of cookiesToSet) {
+          request.cookies.set(name, value);
+        }
+        response = NextResponse.next({ request });
+        for (const { name, value, options } of cookiesToSet) {
+          response.cookies.set(name, value, options);
+        }
+      },
+    },
+  });
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  const path = request.nextUrl.pathname;
+  const isGated =
+    path === "/jobs" ||
+    path.startsWith("/jobs/") ||
+    path === "/pending" ||
+    path.startsWith("/admin");
+
+  if (!user && isGated) {
+    const loginUrl = new URL("/login", request.url);
+    loginUrl.searchParams.set("next", path + request.nextUrl.search);
+    return NextResponse.redirect(loginUrl);
   }
 
-  const isAuthed = () => {
-    try {
-      const token = request.cookies.get(SESSION_COOKIE)?.value;
-      if (!token) return false;
-      const payload = verifyState(token);
-      return payload?.ok === "1" && Number(payload.exp) > Date.now();
-    } catch {
-      // Misconfigured APP_SECRET, or a tampered/corrupt cookie: fail closed.
-      return false;
-    }
-  };
-
-  if (isAuthed()) {
-    return NextResponse.next();
-  }
-
-  const loginUrl = new URL("/login", request.url);
-  loginUrl.searchParams.set("next", request.nextUrl.pathname + request.nextUrl.search);
-  return NextResponse.redirect(loginUrl);
+  return response;
 }
 
 export const config = {
-  matcher: ["/((?!api/cron|_next/static|_next/image|favicon.ico|login).*)"],
+  // Run on everything except static assets and the auth callback route.
+  matcher: [
+    "/((?!_next/static|_next/image|favicon.ico|api/cron|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
+  ],
 };

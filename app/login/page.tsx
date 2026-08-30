@@ -1,35 +1,28 @@
-import { login } from "@/lib/actions/auth";
+import { redirect } from "next/navigation";
+import { getSessionUser } from "@/lib/auth";
+import { LoginForm } from "./LoginForm";
 
 export default async function LoginPage({
   searchParams,
 }: {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
+  const user = await getSessionUser();
+  if (user) redirect(user.profile.is_approved ? "/jobs" : "/pending");
+
   const sp = await searchParams;
-  const next = typeof sp.next === "string" ? sp.next : "/";
-  const hasError = sp.error === "1";
+  const next = typeof sp.next === "string" ? sp.next : "/jobs";
+  const justRegistered = sp.registered === "1";
 
   return (
-    <div className="mx-auto flex max-w-sm flex-col gap-4">
+    <div className="mx-auto flex max-w-sm flex-col gap-5">
       <h1 className="text-xl font-semibold">Sign in</h1>
-      <form action={login} className="flex flex-col gap-3">
-        <input type="hidden" name="next" value={next} />
-        <input
-          type="password"
-          name="password"
-          placeholder="Password"
-          required
-          autoFocus
-          className="rounded-md border border-black/15 bg-transparent px-3 py-2 dark:border-white/20"
-        />
-        {hasError && <p className="text-sm text-red-600 dark:text-red-400">Incorrect password.</p>}
-        <button
-          type="submit"
-          className="rounded-md bg-black px-4 py-2 text-sm font-medium text-white dark:bg-white dark:text-black"
-        >
-          Sign in
-        </button>
-      </form>
+      {justRegistered && (
+        <p className="rounded-md border border-green-600/30 bg-green-600/10 px-3 py-2 text-sm text-green-700 dark:text-green-300">
+          Account created. Please confirm your email if prompted, then sign in.
+        </p>
+      )}
+      <LoginForm next={next} />
     </div>
   );
 }

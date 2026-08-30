@@ -14,8 +14,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Autopost",
-  description: "Automated, on-brand posting to TikTok and Facebook.",
+  title: "LinguaBoard — Translation & Localization Jobs",
+  description:
+    "A curated, invite-only job board for professional translators and localizers.",
 };
 
 export default function RootLayout({
@@ -31,6 +32,10 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col">
         <Nav />
         <main className="mx-auto w-full max-w-5xl flex-1 px-6 py-8">{children}</main>
+        <footer className="border-t border-black/10 px-6 py-6 text-center text-xs text-black/50 dark:border-white/10 dark:text-white/50">
+          LinguaBoard · A private board for translation &amp; localization
+          professionals
+        </footer>
       </body>
     </html>
   );
