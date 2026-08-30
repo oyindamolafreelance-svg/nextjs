@@ -108,8 +108,14 @@ $$;
 -- Privilege guard: the profiles RLS UPDATE policy lets a user edit their own
 -- row (e.g. their name), but RLS can't restrict *which* columns. Without this
 -- a pending user could set their own is_approved / is_admin to true. This
--- trigger pins those two columns to their previous values for anyone who is
--- not an admin, so only the admin approval flow can flip them.
+-- trigger pins those two columns to their previous values for a logged-in
+-- non-admin user, so only the admin approval flow can flip them.
+--
+-- The `auth.uid() is not null` guard is essential: trusted backend contexts
+-- (the Supabase SQL editor, the service-role key, migrations) have no auth
+-- user, so auth.uid() is null and is_admin() is false there. Without this
+-- guard the trigger would also block legitimate promotions run as the
+-- database owner — e.g. promote-admin.sql seeding the first admin.
 -- ---------------------------------------------------------------------------
 create or replace function public.protect_profile_privileges()
 returns trigger
@@ -118,7 +124,7 @@ security definer
 set search_path = public
 as $$
 begin
-  if not public.is_admin() then
+  if auth.uid() is not null and not public.is_admin() then
     new.is_approved := old.is_approved;
     new.is_admin := old.is_admin;
   end if;
