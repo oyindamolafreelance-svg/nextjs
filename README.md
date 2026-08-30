@@ -70,7 +70,7 @@ Register through the app once (so the auth user + profile row exist), then run
 ### 5. AI auto-fill (optional but recommended)
 
 Set `ANTHROPIC_API_KEY` to enable the "Auto-fill fields" button on
-`/admin/post-job`. `ANTHROPIC_MODEL` defaults to `claude-sonnet-4-6`. Without a
+`/admin/post-job`. `ANTHROPIC_MODEL` defaults to `claude-sonnet-5`. Without a
 key, the admin fills the form manually — nothing else is affected.
 
 ### 6. Run locally

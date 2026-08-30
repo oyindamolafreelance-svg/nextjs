@@ -1,6 +1,6 @@
 import type { ParsedJobFields } from "@/lib/types";
 
-const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL ?? "claude-sonnet-4-6";
+const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL ?? "claude-sonnet-5";
 
 const FIELD_KEYS: (keyof ParsedJobFields)[] = [
   "title",
@@ -71,7 +71,18 @@ export async function parseJobText(rawText: string): Promise<ParsedJobFields> {
   }
 
   if (!res.ok) {
-    throw new ParseJobError(`AI service error (${res.status}). Please try again.`);
+    // Surface the API's own reason (e.g. an invalid model or auth problem);
+    // this is an admin-only screen, so the extra detail is safe and useful.
+    const detail = await res.text().catch(() => "");
+    let reason = "";
+    try {
+      reason = JSON.parse(detail)?.error?.message ?? "";
+    } catch {
+      reason = detail.slice(0, 200);
+    }
+    throw new ParseJobError(
+      `AI service error (${res.status})${reason ? `: ${reason}` : ""}. Please try again.`
+    );
   }
 
   const json = await res.json().catch(() => null);
