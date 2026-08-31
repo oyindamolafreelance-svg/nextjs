@@ -69,9 +69,18 @@ Register through the app once (so the auth user + profile row exist), then run
 
 ### 5. AI auto-fill (optional but recommended)
 
-Set `ANTHROPIC_API_KEY` to enable the "Auto-fill fields" button on
-`/admin/post-job`. `ANTHROPIC_MODEL` defaults to `claude-sonnet-5`. Without a
-key, the admin fills the form manually — nothing else is affected.
+The "Auto-fill fields" button on `/admin/post-job` works with **either**
+provider — set whichever key you have (Gemini is used if both are present):
+
+- **Google Gemini** (free tier, no card): create a key at
+  https://aistudio.google.com/apikey and set `GEMINI_API_KEY`.
+  `GEMINI_MODEL` defaults to `gemini-2.5-flash`.
+- **Anthropic Claude** (pay-as-you-go): set `ANTHROPIC_API_KEY`.
+  `ANTHROPIC_MODEL` defaults to `claude-sonnet-5`. Note a zero credit
+  balance returns an API error — top up at the Anthropic console.
+
+Without either key, the admin fills the form manually — nothing else is
+affected.
 
 ### 6. Run locally
 
