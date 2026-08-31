@@ -29,6 +29,12 @@ export async function Nav() {
               <Link href="/saved" className="hover:text-current">
                 Saved
               </Link>
+              <Link href="/progress" className="hover:text-current">
+                Progress
+              </Link>
+              <Link href="/leaderboard" className="hover:text-current">
+                Leaderboard
+              </Link>
             </>
           )}
           {admin && (

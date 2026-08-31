@@ -4,8 +4,6 @@ import { PostJobForm } from "./PostJobForm";
 
 export const dynamic = "force-dynamic";
 
-const DAILY_QUOTA = 5;
-
 export default async function PostJobPage() {
   const user = await requireApproved("/post-job");
   const supabase = await createClient();
@@ -13,14 +11,18 @@ export default async function PostJobPage() {
   const startOfDay = new Date();
   startOfDay.setHours(0, 0, 0, 0);
 
-  const { count } = await supabase
-    .from("jobs")
-    .select("id", { count: "exact", head: true })
-    .eq("posted_by", user.id)
-    .gte("date_posted", startOfDay.toISOString());
+  const [{ count }, { data: quotaData }] = await Promise.all([
+    supabase
+      .from("jobs")
+      .select("id", { count: "exact", head: true })
+      .eq("posted_by", user.id)
+      .gte("date_posted", startOfDay.toISOString()),
+    supabase.rpc("my_daily_quota"),
+  ]);
 
+  const quota = typeof quotaData === "number" ? quotaData : 5;
   const postedToday = count ?? 0;
-  const remaining = Math.max(0, DAILY_QUOTA - postedToday);
+  const remaining = Math.max(0, quota - postedToday);
 
   return (
     <div className="flex flex-col gap-6">
@@ -32,10 +34,10 @@ export default async function PostJobPage() {
         </p>
       </div>
 
-      {!user.profile.is_admin && !user.profile.is_exempt && (
+      {!user.profile.is_admin && !user.profile.is_exempt && quota > 0 && (
         <div className="rounded-lg border border-black/10 bg-black/[.03] p-4 text-sm dark:border-white/10 dark:bg-white/[.04]">
           <p className="font-medium">
-            You&apos;ve posted {postedToday} of {DAILY_QUOTA} jobs today.
+            You&apos;ve posted {postedToday} of {quota} jobs today.
           </p>
           <p className="mt-1 text-black/60 dark:text-white/60">
             {remaining > 0
