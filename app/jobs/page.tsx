@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { requireApproved } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import type { Job } from "@/lib/types";
@@ -5,6 +6,49 @@ import { JobFilters, type FilterOptions } from "./JobFilters";
 import { JobCard } from "./JobCard";
 
 export const dynamic = "force-dynamic";
+
+// Daily give-to-get threshold (mirrors daily_post_quota() in the DB).
+const DAILY_QUOTA = 5;
+
+function JobsGate({ postedToday, quota }: { postedToday: number; quota: number }) {
+  const remaining = Math.max(0, quota - postedToday);
+  const pct = Math.min(100, Math.round((postedToday / quota) * 100));
+  return (
+    <div className="mx-auto flex max-w-lg flex-col items-start gap-4 py-8">
+      <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-3 py-1 text-xs font-medium text-amber-700 dark:text-amber-300">
+        Locked for today
+      </span>
+      <h1 className="text-2xl font-semibold">Post to unlock the board</h1>
+      <p className="text-black/70 dark:text-white/70">
+        To keep the board full of fresh leads, you unlock browsing by
+        contributing. Post <strong>{quota} distinct jobs today</strong> and the
+        full board opens for the rest of the day.
+      </p>
+      <div className="w-full">
+        <div className="mb-1 flex justify-between text-sm">
+          <span className="font-medium">
+            {postedToday} / {quota} posted today
+          </span>
+          <span className="text-black/50 dark:text-white/50">
+            {remaining} to go
+          </span>
+        </div>
+        <div className="h-2 w-full overflow-hidden rounded-full bg-black/10 dark:bg-white/10">
+          <div
+            className="h-full rounded-full bg-black/70 dark:bg-white/70"
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+      </div>
+      <Link
+        href="/post-job"
+        className="mt-2 rounded-md bg-black px-5 py-2.5 text-sm font-medium text-white dark:bg-white dark:text-black"
+      >
+        Post a job
+      </Link>
+    </div>
+  );
+}
 
 type SP = { [key: string]: string | string[] | undefined };
 
@@ -24,14 +68,31 @@ export default async function JobsPage({
 }: {
   searchParams: Promise<SP>;
 }) {
-  await requireApproved("/jobs");
+  const user = await requireApproved("/jobs");
   const sp = await searchParams;
+  const supabase = await createClient();
+
+  // Give-to-get: non-admins must post the daily quota before browsing other
+  // members' listings. RLS enforces this at the data layer too; this is the
+  // friendly UX gate that explains it.
+  if (!user.profile.is_admin) {
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+    const { count: postedCount } = await supabase
+      .from("jobs")
+      .select("id", { count: "exact", head: true })
+      .eq("posted_by", user.id)
+      .gte("date_posted", startOfDay.toISOString());
+    const postedToday = postedCount ?? 0;
+    if (postedToday < DAILY_QUOTA) {
+      return <JobsGate postedToday={postedToday} quota={DAILY_QUOTA} />;
+    }
+  }
 
   const languagePair = pick(sp, "language_pair");
   const domain = pick(sp, "domain");
   const workType = pick(sp, "work_type");
 
-  const supabase = await createClient();
   const nowIso = new Date().toISOString();
 
   // Only active, non-expired listings are ever shown to members. Filtering by

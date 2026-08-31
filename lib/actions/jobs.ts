@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { requireAdmin } from "@/lib/auth";
+import { requireAdmin, requireApproved } from "@/lib/auth";
 
 export interface ApprovalState {
   error?: string;
@@ -41,7 +41,7 @@ export async function createJob(
   _prev: JobFormState,
   formData: FormData
 ): Promise<JobFormState> {
-  await requireAdmin();
+  const user = await requireApproved();
 
   const get = (k: string) => String(formData.get(k) ?? "").trim();
   const orNull = (v: string) => (v === "" ? null : v);
@@ -74,6 +74,20 @@ export async function createJob(
   const expiresAt = new Date(now.getTime() + expiryDays * 24 * 60 * 60 * 1000);
 
   const supabase = await createClient();
+
+  // Auto-check for the give-to-get gate: block re-posting the same title today,
+  // so a user can't spam one listing five times to unlock browsing.
+  const startOfDay = new Date(now);
+  startOfDay.setHours(0, 0, 0, 0);
+  const { data: dupes } = await supabase
+    .from("jobs")
+    .select("id, title")
+    .eq("posted_by", user.id)
+    .gte("date_posted", startOfDay.toISOString());
+  if ((dupes ?? []).some((d) => d.title.trim().toLowerCase() === title.toLowerCase())) {
+    return { error: "You've already posted a job with this title today. Each of your daily posts must be a distinct listing." };
+  }
+
   const { error } = await supabase.from("jobs").insert({
     title,
     language_pair,
@@ -84,6 +98,7 @@ export async function createJob(
     description: orNull(get("description")),
     application_instructions: orNull(get("application_instructions")),
     source: orNull(get("source")),
+    posted_by: user.id,
     date_posted: now.toISOString(),
     expires_at: expiresAt.toISOString(),
     is_active: true,
@@ -92,6 +107,7 @@ export async function createJob(
   if (error) return { error: error.message };
 
   revalidatePath("/jobs");
+  revalidatePath("/post-job");
   revalidatePath("/admin/dashboard");
   return { success: true };
 }

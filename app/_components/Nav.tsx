@@ -16,17 +16,22 @@ export async function Nav() {
 
         <nav className="flex flex-1 flex-wrap gap-4 text-sm text-black/70 dark:text-white/70">
           {approved && (
-            <Link href="/jobs" className="hover:text-current">
-              Jobs
-            </Link>
+            <>
+              <Link href="/jobs" className="hover:text-current">
+                Jobs
+              </Link>
+              <Link href="/post-job" className="hover:text-current">
+                Post a job
+              </Link>
+            </>
           )}
           {admin && (
             <>
               <Link href="/admin/approvals" className="hover:text-current">
                 Approvals
               </Link>
-              <Link href="/admin/post-job" className="hover:text-current">
-                Post a job
+              <Link href="/admin/analytics" className="hover:text-current">
+                Analytics
               </Link>
               <Link href="/admin/dashboard" className="hover:text-current">
                 Dashboard

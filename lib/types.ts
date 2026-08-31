@@ -18,6 +18,7 @@ export interface Job {
   description: string | null;
   application_instructions: string | null;
   source: string | null;
+  posted_by: string | null;
   date_posted: string;
   expires_at: string | null;
   is_active: boolean;
