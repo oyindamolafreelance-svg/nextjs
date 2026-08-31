@@ -75,7 +75,8 @@ export default async function JobsPage({
   // Give-to-get: non-admins must post the daily quota before browsing other
   // members' listings. RLS enforces this at the data layer too; this is the
   // friendly UX gate that explains it.
-  if (!user.profile.is_admin) {
+  // Admins and "direct access" (exempt) members skip the give-to-get gate.
+  if (!user.profile.is_admin && !user.profile.is_exempt) {
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
     const { count: postedCount } = await supabase
