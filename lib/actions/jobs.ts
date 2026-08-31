@@ -111,3 +111,16 @@ export async function createJob(
   revalidatePath("/admin/dashboard");
   return { success: true };
 }
+
+// Delete one of your own listings (RLS also allows admins to delete any).
+export async function deleteJob(formData: FormData) {
+  await requireApproved();
+  const jobId = String(formData.get("job_id") ?? "");
+  if (!jobId) return;
+
+  const supabase = await createClient();
+  await supabase.from("jobs").delete().eq("id", jobId);
+
+  revalidatePath("/my-posts");
+  revalidatePath("/jobs");
+}

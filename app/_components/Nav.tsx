@@ -23,12 +23,21 @@ export async function Nav() {
               <Link href="/post-job" className="hover:text-current">
                 Post a job
               </Link>
+              <Link href="/my-posts" className="hover:text-current">
+                My posts
+              </Link>
+              <Link href="/saved" className="hover:text-current">
+                Saved
+              </Link>
             </>
           )}
           {admin && (
             <>
               <Link href="/admin/approvals" className="hover:text-current">
                 Approvals
+              </Link>
+              <Link href="/admin/reports" className="hover:text-current">
+                Reports
               </Link>
               <Link href="/admin/analytics" className="hover:text-current">
                 Analytics
