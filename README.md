@@ -69,8 +69,12 @@ Register through the app once (so the auth user + profile row exist), then run
 
 ### 5. AI auto-fill (optional but recommended)
 
-The "Auto-fill fields" button on `/admin/post-job` works with **either**
-provider — set whichever key you have (Gemini is used if both are present):
+The "Auto-fill fields" button on `/admin/post-job` pre-fills the form from a
+pasted posting. **With no API key set, it uses a built-in, key-free pattern
+extractor** (`lib/ai/extract-job.ts`) — no network, no billing, always
+available; the admin reviews before posting. Set an API key for smarter,
+model-based extraction of messy postings — whichever key is present is used
+(Gemini preferred):
 
 - **Google Gemini** (free tier, no card): create a key at
   https://aistudio.google.com/apikey and set `GEMINI_API_KEY`.
