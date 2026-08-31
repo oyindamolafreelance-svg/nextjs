@@ -74,7 +74,7 @@ provider — set whichever key you have (Gemini is used if both are present):
 
 - **Google Gemini** (free tier, no card): create a key at
   https://aistudio.google.com/apikey and set `GEMINI_API_KEY`.
-  `GEMINI_MODEL` defaults to `gemini-2.5-flash`.
+  `GEMINI_MODEL` defaults to `gemini-3.6-flash`.
 - **Anthropic Claude** (pay-as-you-go): set `ANTHROPIC_API_KEY`.
   `ANTHROPIC_MODEL` defaults to `claude-sonnet-5`. Note a zero credit
   balance returns an API error — top up at the Anthropic console.

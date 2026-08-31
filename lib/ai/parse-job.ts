@@ -4,7 +4,7 @@ import type { ParsedJobFields } from "@/lib/types";
 //   * GEMINI_API_KEY  → Google Gemini (has a free tier; preferred if present)
 //   * ANTHROPIC_API_KEY → Anthropic Claude
 // Models are overridable via GEMINI_MODEL / ANTHROPIC_MODEL.
-const GEMINI_MODEL = process.env.GEMINI_MODEL ?? "gemini-2.5-flash";
+const GEMINI_MODEL = process.env.GEMINI_MODEL ?? "gemini-3.6-flash";
 const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL ?? "claude-sonnet-5";
 
 const FIELD_KEYS: (keyof ParsedJobFields)[] = [
