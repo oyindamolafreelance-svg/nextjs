@@ -1,5 +1,6 @@
 import type { Job } from "@/lib/types";
 import { ApplyLink } from "./ApplyLink";
+import { JobActions } from "./JobActions";
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString(undefined, {
@@ -10,7 +11,7 @@ function formatDate(iso: string) {
 }
 
 // Renders a listing to a member. Deliberately omits `source` (admin-only).
-export function JobCard({ job }: { job: Job }) {
+export function JobCard({ job, saved = false }: { job: Job; saved?: boolean }) {
   return (
     <article className="flex flex-col gap-3 rounded-lg border border-black/10 p-5 dark:border-white/10">
       <div className="flex flex-wrap items-start justify-between gap-2">
@@ -42,9 +43,12 @@ export function JobCard({ job }: { job: Job }) {
         </div>
       )}
 
-      <div className="mt-1 border-t border-black/5 pt-3 text-sm dark:border-white/5">
-        <span className="text-black/50 dark:text-white/50">Apply: </span>
-        <ApplyLink jobId={job.id} contact={job.apply_contact} />
+      <div className="mt-1 flex flex-wrap items-center justify-between gap-3 border-t border-black/5 pt-3 text-sm dark:border-white/5">
+        <div>
+          <span className="text-black/50 dark:text-white/50">Apply: </span>
+          <ApplyLink jobId={job.id} contact={job.apply_contact} />
+        </div>
+        <JobActions jobId={job.id} initialSaved={saved} />
       </div>
     </article>
   );

@@ -15,7 +15,13 @@ const LABELS: Record<keyof FilterOptions, string> = {
   work_type: "Work type",
 };
 
-export function JobFilters({ options }: { options: FilterOptions }) {
+export function JobFilters({
+  options,
+  query = "",
+}: {
+  options: FilterOptions;
+  query?: string;
+}) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -30,12 +36,36 @@ export function JobFilters({ options }: { options: FilterOptions }) {
     [router, searchParams]
   );
 
-  const hasFilters = ["language_pair", "domain", "work_type"].some((k) =>
+  const hasFilters = ["language_pair", "domain", "work_type", "q"].some((k) =>
     searchParams.get(k)
   );
 
   return (
-    <div className="flex flex-wrap items-end gap-3 rounded-lg border border-black/10 p-4 dark:border-white/10">
+    <div className="flex flex-col gap-3">
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          const value = new FormData(e.currentTarget).get("q");
+          update("q", typeof value === "string" ? value.trim() : "");
+        }}
+        className="flex gap-2"
+      >
+        <input
+          type="search"
+          name="q"
+          defaultValue={query}
+          placeholder="Search title, description, domain…"
+          className="flex-1 rounded-md border border-black/15 bg-transparent px-3 py-2 text-sm dark:border-white/20"
+        />
+        <button
+          type="submit"
+          className="rounded-md bg-black px-4 py-2 text-sm font-medium text-white dark:bg-white dark:text-black"
+        >
+          Search
+        </button>
+      </form>
+
+      <div className="flex flex-wrap items-end gap-3 rounded-lg border border-black/10 p-4 dark:border-white/10">
       {(Object.keys(LABELS) as (keyof FilterOptions)[]).map((key) => (
         <label key={key} className="flex flex-col gap-1 text-sm">
           <span className="font-medium">{LABELS[key]}</span>
@@ -63,6 +93,7 @@ export function JobFilters({ options }: { options: FilterOptions }) {
           Clear filters
         </button>
       )}
+      </div>
     </div>
   );
 }

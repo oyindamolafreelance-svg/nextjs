@@ -93,6 +93,8 @@ export default async function JobsPage({
   const languagePair = pick(sp, "language_pair");
   const domain = pick(sp, "domain");
   const workType = pick(sp, "work_type");
+  // Strip characters that would break the PostgREST or-filter syntax.
+  const q = pick(sp, "q")?.replace(/[,%()*]/g, " ").trim();
 
   const nowIso = new Date().toISOString();
 
@@ -124,10 +126,22 @@ export default async function JobsPage({
   if (languagePair) query = query.eq("language_pair", languagePair);
   if (domain) query = query.eq("domain", domain);
   if (workType) query = query.eq("work_type", workType);
+  if (q) {
+    query = query.or(
+      `title.ilike.%${q}%,description.ilike.%${q}%,domain.ilike.%${q}%,language_pair.ilike.%${q}%,work_type.ilike.%${q}%`
+    );
+  }
 
   const { data: jobs, error } = await query.returns<Job[]>();
 
-  const hasFilters = Boolean(languagePair || domain || workType);
+  // Mark which listings the viewer has bookmarked.
+  const { data: bookmarkRows } = await supabase
+    .from("job_bookmarks")
+    .select("job_id")
+    .eq("user_id", user.id);
+  const savedIds = new Set((bookmarkRows ?? []).map((b) => b.job_id));
+
+  const hasFilters = Boolean(languagePair || domain || workType || q);
 
   return (
     <div className="flex flex-col gap-6">
@@ -138,7 +152,7 @@ export default async function JobsPage({
         </p>
       </div>
 
-      <JobFilters options={options} />
+      <JobFilters options={options} query={q ?? ""} />
 
       {error ? (
         <p className="rounded-lg border border-red-500/30 bg-red-500/5 p-4 text-sm text-red-700 dark:text-red-300">
@@ -164,7 +178,7 @@ export default async function JobsPage({
           </p>
           <div className="grid gap-4">
             {jobs.map((job) => (
-              <JobCard key={job.id} job={job} />
+              <JobCard key={job.id} job={job} saved={savedIds.has(job.id)} />
             ))}
           </div>
         </>
