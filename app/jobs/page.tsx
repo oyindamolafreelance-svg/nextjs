@@ -10,6 +10,54 @@ export const dynamic = "force-dynamic";
 // Daily give-to-get threshold (mirrors daily_post_quota() in the DB).
 const DAILY_QUOTA = 5;
 
+// Timezone that decides which calendar day a listing belongs to (so
+// "Today"/"Yesterday" match your local day). Override with NEXT_PUBLIC_SITE_TZ.
+const SITE_TZ = process.env.NEXT_PUBLIC_SITE_TZ || "Africa/Lagos";
+
+function dayKey(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-CA", { timeZone: SITE_TZ });
+}
+
+function dayLabel(iso: string, todayKey: string, yesterdayKey: string): string {
+  const key = dayKey(iso);
+  if (key === todayKey) return "Today";
+  if (key === yesterdayKey) return "Yesterday";
+  return new Date(iso).toLocaleDateString(undefined, {
+    weekday: "long",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: SITE_TZ,
+  });
+}
+
+// Group already-sorted (newest-first) jobs into day sections, keeping order.
+function groupByDay(jobs: Job[]) {
+  const now = new Date();
+  const todayKey = now.toLocaleDateString("en-CA", { timeZone: SITE_TZ });
+  const yesterdayKey = new Date(now.getTime() - 86_400_000).toLocaleDateString(
+    "en-CA",
+    { timeZone: SITE_TZ }
+  );
+
+  const groups: { label: string; items: Job[] }[] = [];
+  const indexByKey = new Map<string, number>();
+  for (const job of jobs) {
+    const key = dayKey(job.date_posted);
+    let idx = indexByKey.get(key);
+    if (idx === undefined) {
+      idx = groups.length;
+      indexByKey.set(key, idx);
+      groups.push({
+        label: dayLabel(job.date_posted, todayKey, yesterdayKey),
+        items: [],
+      });
+    }
+    groups[idx].items.push(job);
+  }
+  return groups;
+}
+
 function JobsGate({ postedToday, quota }: { postedToday: number; quota: number }) {
   const remaining = Math.max(0, quota - postedToday);
   const pct = Math.min(100, Math.round((postedToday / quota) * 100));
@@ -176,9 +224,25 @@ export default async function JobsPage({
           <p className="text-sm text-black/50 dark:text-white/50">
             {jobs.length} listing{jobs.length === 1 ? "" : "s"}
           </p>
-          <div className="grid gap-4">
-            {jobs.map((job) => (
-              <JobCard key={job.id} job={job} saved={savedIds.has(job.id)} />
+          <div className="flex flex-col gap-8">
+            {groupByDay(jobs).map((group) => (
+              <section key={group.label} className="flex flex-col gap-4">
+                <h2 className="flex items-baseline gap-2 border-b border-black/10 pb-1 text-sm font-semibold dark:border-white/10">
+                  {group.label}
+                  <span className="text-xs font-normal text-black/40 dark:text-white/40">
+                    {group.items.length} job{group.items.length === 1 ? "" : "s"}
+                  </span>
+                </h2>
+                <div className="grid gap-4">
+                  {group.items.map((job) => (
+                    <JobCard
+                      key={job.id}
+                      job={job}
+                      saved={savedIds.has(job.id)}
+                    />
+                  ))}
+                </div>
+              </section>
             ))}
           </div>
         </>
