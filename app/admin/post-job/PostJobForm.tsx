@@ -13,6 +13,7 @@ const EMPTY = {
   work_type: "",
   experience_required: "",
   apply_contact: "",
+  description: "",
   application_instructions: "",
   source: "",
   expiry_days: "30",
@@ -64,6 +65,7 @@ export function PostJobForm() {
         work_type: parsed.work_type || f.work_type,
         experience_required: parsed.experience_required || f.experience_required,
         apply_contact: parsed.apply_contact || f.apply_contact,
+        description: parsed.description || f.description,
         application_instructions:
           parsed.application_instructions || f.application_instructions,
       }));
@@ -168,6 +170,17 @@ export function PostJobForm() {
           </Field>
         </div>
 
+        <Field label="Description (what the role involves — shown to members)">
+          <textarea
+            name="description"
+            value={fields.description}
+            onChange={(e) => set("description", e.target.value)}
+            rows={8}
+            placeholder="A full outline of the role: scope, subject matter, volume, required skills/CAT tools, qualifications, rate, deadline… (the AI fills this from a pasted posting)"
+            className={inputCls}
+          />
+        </Field>
+
         <Field label="Apply contact (email and/or URL)" required>
           <input
             name="apply_contact"
@@ -179,7 +192,7 @@ export function PostJobForm() {
           />
         </Field>
 
-        <Field label="Application instructions">
+        <Field label="Application instructions (how to apply)">
           <textarea
             name="application_instructions"
             value={fields.application_instructions}

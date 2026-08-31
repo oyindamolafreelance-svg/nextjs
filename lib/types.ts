@@ -15,6 +15,7 @@ export interface Job {
   work_type: string;
   experience_required: string | null;
   apply_contact: string;
+  description: string | null;
   application_instructions: string | null;
   source: string | null;
   date_posted: string;
@@ -32,5 +33,6 @@ export interface ParsedJobFields {
   work_type: string;
   experience_required: string;
   apply_contact: string;
+  description: string;
   application_instructions: string;
 }
