@@ -125,16 +125,22 @@ export default async function JobsPage({
   // friendly UX gate that explains it.
   // Admins and "direct access" (exempt) members skip the give-to-get gate.
   if (!user.profile.is_admin && !user.profile.is_exempt) {
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
-    const { count: postedCount } = await supabase
-      .from("jobs")
-      .select("id", { count: "exact", head: true })
-      .eq("posted_by", user.id)
-      .gte("date_posted", startOfDay.toISOString());
-    const postedToday = postedCount ?? 0;
-    if (postedToday < DAILY_QUOTA) {
-      return <JobsGate postedToday={postedToday} quota={DAILY_QUOTA} />;
+    // Effective quota depends on the user's tier (Ambassador = 0 = permanent).
+    const { data: quotaData } = await supabase.rpc("my_daily_quota");
+    const quota = typeof quotaData === "number" ? quotaData : DAILY_QUOTA;
+
+    if (quota > 0) {
+      const startOfDay = new Date();
+      startOfDay.setHours(0, 0, 0, 0);
+      const { count: postedCount } = await supabase
+        .from("jobs")
+        .select("id", { count: "exact", head: true })
+        .eq("posted_by", user.id)
+        .gte("date_posted", startOfDay.toISOString());
+      const postedToday = postedCount ?? 0;
+      if (postedToday < quota) {
+        return <JobsGate postedToday={postedToday} quota={quota} />;
+      }
     }
   }
 
