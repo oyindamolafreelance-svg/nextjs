@@ -81,6 +81,7 @@ export async function createJob(
     work_type,
     experience_required: orNull(get("experience_required")),
     apply_contact,
+    description: orNull(get("description")),
     application_instructions: orNull(get("application_instructions")),
     source: orNull(get("source")),
     date_posted: now.toISOString(),

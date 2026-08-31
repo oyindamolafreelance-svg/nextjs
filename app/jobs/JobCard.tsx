@@ -46,10 +46,19 @@ export function JobCard({ job }: { job: Job }) {
         {job.experience_required && <Tag muted>{job.experience_required}</Tag>}
       </div>
 
-      {job.application_instructions && (
-        <p className="whitespace-pre-line text-sm text-black/70 dark:text-white/70">
-          {job.application_instructions}
+      {job.description && (
+        <p className="whitespace-pre-line text-sm text-black/80 dark:text-white/80">
+          {job.description}
         </p>
+      )}
+
+      {job.application_instructions && (
+        <div className="rounded-md bg-black/[.03] p-3 text-sm text-black/70 dark:bg-white/[.04] dark:text-white/70">
+          <p className="mb-1 text-xs font-medium uppercase tracking-wide text-black/50 dark:text-white/50">
+            How to apply
+          </p>
+          <p className="whitespace-pre-line">{job.application_instructions}</p>
+        </div>
       )}
 
       <div className="mt-1 border-t border-black/5 pt-3 text-sm dark:border-white/5">

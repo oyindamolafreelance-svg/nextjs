@@ -135,19 +135,38 @@ function detectInstructions(text: string): string {
   return hits.slice(0, 4).join("\n");
 }
 
+// Builds a bullet outline from the posting so no detail is lost. Drops the
+// title line and lines that are only a bare contact, keeps everything else.
+function detectDescription(text: string, title: string): string {
+  const lines = text
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+
+  const bullets = lines
+    .filter((l) => l !== title)
+    .filter((l) => !(EMAIL_RE.test(l) && l.length < 60))
+    .filter((l) => !(URL_RE.test(l) && l.split(/\s+/).length <= 2))
+    .map((l) => (l.startsWith("-") || l.startsWith("•") ? l : `- ${l}`));
+
+  return bullets.join("\n");
+}
+
 export function extractJobFields(rawText: string): ParsedJobFields {
   const text = rawText.trim();
   const work_type = firstMatch(WORKTYPE_RULES, text);
   const domain = firstMatch(DOMAIN_RULES, text);
   const language_pair = detectLanguagePair(text);
+  const title = detectTitle(text, work_type, language_pair);
 
   return {
-    title: detectTitle(text, work_type, language_pair),
+    title,
     language_pair,
     domain,
     work_type,
     experience_required: detectExperience(text),
     apply_contact: detectApplyContact(text),
+    description: detectDescription(text, title),
     application_instructions: detectInstructions(text),
   };
 }

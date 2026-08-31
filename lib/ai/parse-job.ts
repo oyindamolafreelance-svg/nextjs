@@ -15,10 +15,11 @@ const FIELD_KEYS: (keyof ParsedJobFields)[] = [
   "work_type",
   "experience_required",
   "apply_contact",
+  "description",
   "application_instructions",
 ];
 
-const SYSTEM_PROMPT = `You extract structured data from raw translation/localization job postings that a human copied from sites like ProZ, LinkedIn, or agency career pages.
+const SYSTEM_PROMPT = `You extract structured data from raw translation/localization job postings that a human copied from sites like ProZ, LinkedIn, or agency career pages. The goal is a complete, well-organized listing so a translator can write a targeted application without missing any detail.
 
 Return ONLY a single JSON object — no markdown, no code fences, no commentary — with exactly these string keys:
 - "title": the job/role title
@@ -27,12 +28,13 @@ Return ONLY a single JSON object — no markdown, no code fences, no commentary 
 - "work_type": e.g. translation, localization, MTPE, proofreading, subtitling, transcreation
 - "experience_required": e.g. "3+ years", "entry-level ok", "native speaker required" (empty string if unspecified)
 - "apply_contact": the email address and/or URL to apply
-- "application_instructions": required documents, subject-line format, deadline, rate info if listed
+- "description": a thorough, well-outlined summary of the role so an applicant can tailor their application and miss nothing. Capture EVERY relevant detail present in the posting — scope of work, subject matter, volume/word count, required skills and tools (e.g. CAT tools like Trados/memoQ), qualifications, seniority, rate/compensation, timeline/deadline, remote/onsite, and anything else stated. Format as short plain-text lines, each starting with "- ". Do not invent anything not in the text.
+- "application_instructions": the concrete how-to-apply steps only — where/how to send, required documents (CV, samples, certificates), subject-line format, deadline. Keep it short.
 
 Rules:
 - Every key must be present. If a value is not stated, use an empty string "".
-- Do not invent contact details or requirements that are not in the text.
-- Keep values concise and plain-text (no markdown).`;
+- Do not invent details, contacts, or requirements that are not in the text.
+- Use plain text only (no markdown formatting beyond "- " bullet lines in "description").`;
 
 export class ParseJobError extends Error {}
 
@@ -137,7 +139,7 @@ async function callAnthropic(apiKey: string, text: string): Promise<string> {
       },
       body: JSON.stringify({
         model: ANTHROPIC_MODEL,
-        max_tokens: 1024,
+        max_tokens: 2048,
         system: SYSTEM_PROMPT,
         messages: [
           {
