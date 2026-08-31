@@ -4,6 +4,7 @@ export interface Profile {
   full_name: string | null;
   is_approved: boolean;
   is_admin: boolean;
+  is_exempt: boolean;
   created_at: string;
 }
 

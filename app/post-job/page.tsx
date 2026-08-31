@@ -32,7 +32,7 @@ export default async function PostJobPage() {
         </p>
       </div>
 
-      {!user.profile.is_admin && (
+      {!user.profile.is_admin && !user.profile.is_exempt && (
         <div className="rounded-lg border border-black/10 bg-black/[.03] p-4 text-sm dark:border-white/10 dark:bg-white/[.04]">
           <p className="font-medium">
             You&apos;ve posted {postedToday} of {DAILY_QUOTA} jobs today.
