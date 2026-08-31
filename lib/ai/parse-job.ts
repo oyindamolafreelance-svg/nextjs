@@ -78,10 +78,18 @@ export async function parseJobText(rawText: string): Promise<ParsedJobFields> {
     try {
       reason = JSON.parse(detail)?.error?.message ?? "";
     } catch {
-      reason = detail.slice(0, 200);
+      reason = detail.slice(0, 300);
     }
+    // Logged to Vercel runtime logs for diagnosis; also shown in the admin UI.
+    console.error("[parse-job] Anthropic error", {
+      status: res.status,
+      model: ANTHROPIC_MODEL,
+      body: detail.slice(0, 500),
+    });
     throw new ParseJobError(
-      `AI service error (${res.status})${reason ? `: ${reason}` : ""}. Please try again.`
+      `AI service error (${res.status}) [model: ${ANTHROPIC_MODEL}]: ${
+        reason || "no error detail returned"
+      }. Please try again.`
     );
   }
 
