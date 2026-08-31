@@ -2,11 +2,11 @@ import { NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import { parseJobText, ParseJobError } from "@/lib/ai/parse-job";
 
-// Admin-only: parse pasted job text into structured fields for the post-job
-// form. Auth is checked here (not just in the UI) since this hits a paid API.
+// Approved members only: parse pasted job text into structured fields for the
+// post-job form. Auth is checked here (not just in the UI).
 export async function POST(request: Request) {
   const user = await getSessionUser();
-  if (!user?.profile.is_admin) {
+  if (!user?.profile.is_approved) {
     return NextResponse.json({ error: "Not authorized." }, { status: 403 });
   }
 

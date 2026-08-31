@@ -1,24 +1,5 @@
 import type { Job } from "@/lib/types";
-
-function ApplyLink({ contact }: { contact: string }) {
-  const trimmed = contact.trim();
-  const isUrl = /^https?:\/\//i.test(trimmed);
-  const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed);
-
-  if (isUrl || isEmail) {
-    return (
-      <a
-        href={isEmail ? `mailto:${trimmed}` : trimmed}
-        target={isUrl ? "_blank" : undefined}
-        rel={isUrl ? "noopener noreferrer" : undefined}
-        className="font-medium text-blue-700 underline dark:text-blue-400"
-      >
-        {trimmed}
-      </a>
-    );
-  }
-  return <span className="font-medium">{trimmed}</span>;
-}
+import { ApplyLink } from "./ApplyLink";
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString(undefined, {
@@ -63,7 +44,7 @@ export function JobCard({ job }: { job: Job }) {
 
       <div className="mt-1 border-t border-black/5 pt-3 text-sm dark:border-white/5">
         <span className="text-black/50 dark:text-white/50">Apply: </span>
-        <ApplyLink contact={job.apply_contact} />
+        <ApplyLink jobId={job.id} contact={job.apply_contact} />
       </div>
     </article>
   );
