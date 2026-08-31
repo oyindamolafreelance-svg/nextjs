@@ -1,5 +1,10 @@
 import type { ParsedJobFields } from "@/lib/types";
 
+// The admin auto-fill works with EITHER provider — whichever key is set:
+//   * GEMINI_API_KEY  → Google Gemini (has a free tier; preferred if present)
+//   * ANTHROPIC_API_KEY → Anthropic Claude
+// Models are overridable via GEMINI_MODEL / ANTHROPIC_MODEL.
+const GEMINI_MODEL = process.env.GEMINI_MODEL ?? "gemini-2.5-flash";
 const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL ?? "claude-sonnet-5";
 
 const FIELD_KEYS: (keyof ParsedJobFields)[] = [
@@ -30,21 +35,103 @@ Rules:
 
 export class ParseJobError extends Error {}
 
-// Calls the Anthropic Messages API to turn pasted job text into structured
-// fields. Throws ParseJobError with a user-safe message on any failure.
+// Turns pasted job text into structured fields using whichever AI provider is
+// configured. Throws ParseJobError with a user-safe message on any failure.
 export async function parseJobText(rawText: string): Promise<ParsedJobFields> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    throw new ParseJobError(
-      "AI auto-fill isn't configured. Set ANTHROPIC_API_KEY, or fill the fields manually."
-    );
-  }
-
   const text = rawText.trim();
   if (!text) {
     throw new ParseJobError("Paste the job posting text first.");
   }
 
+  const geminiKey = process.env.GEMINI_API_KEY;
+  const anthropicKey = process.env.ANTHROPIC_API_KEY;
+
+  let content: string;
+  if (geminiKey) {
+    content = await callGemini(geminiKey, text);
+  } else if (anthropicKey) {
+    content = await callAnthropic(anthropicKey, text);
+  } else {
+    throw new ParseJobError(
+      "AI auto-fill isn't configured. Set GEMINI_API_KEY (free tier) or ANTHROPIC_API_KEY, or fill the fields manually."
+    );
+  }
+
+  return normalize(content);
+}
+
+// ---------------------------------------------------------------------------
+// Google Gemini (generativelanguage API). Free tier available.
+// ---------------------------------------------------------------------------
+async function callGemini(apiKey: string, text: string): Promise<string> {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-goog-api-key": apiKey,
+      },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+        contents: [
+          {
+            role: "user",
+            parts: [{ text: `Extract the fields from this job posting:\n\n${text}` }],
+          },
+        ],
+        generationConfig: {
+          temperature: 0,
+          maxOutputTokens: 2048,
+          responseMimeType: "application/json",
+        },
+      }),
+    });
+  } catch {
+    throw new ParseJobError("Couldn't reach the AI service. Please try again.");
+  }
+
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    let reason = "";
+    try {
+      reason = JSON.parse(detail)?.error?.message ?? "";
+    } catch {
+      reason = detail.slice(0, 300);
+    }
+    console.error("[parse-job] Gemini error", {
+      status: res.status,
+      model: GEMINI_MODEL,
+      body: detail.slice(0, 500),
+    });
+    throw new ParseJobError(
+      `AI service error (${res.status}) [gemini: ${GEMINI_MODEL}]: ${
+        reason || "no error detail returned"
+      }. Please try again.`
+    );
+  }
+
+  const json = await res.json().catch(() => null);
+  const parts = json?.candidates?.[0]?.content?.parts;
+  const out = Array.isArray(parts)
+    ? parts.map((p: { text?: string }) => p?.text ?? "").join("")
+    : "";
+
+  if (!out) {
+    const finishReason = json?.candidates?.[0]?.finishReason;
+    throw new ParseJobError(
+      `The AI returned no text${finishReason ? ` (${finishReason})` : ""}. Please try again.`
+    );
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// Anthropic Claude (Messages API).
+// ---------------------------------------------------------------------------
+async function callAnthropic(apiKey: string, text: string): Promise<string> {
   let res: Response;
   try {
     res = await fetch("https://api.anthropic.com/v1/messages", {
@@ -71,8 +158,6 @@ export async function parseJobText(rawText: string): Promise<ParsedJobFields> {
   }
 
   if (!res.ok) {
-    // Surface the API's own reason (e.g. an invalid model or auth problem);
-    // this is an admin-only screen, so the extra detail is safe and useful.
     const detail = await res.text().catch(() => "");
     let reason = "";
     try {
@@ -80,14 +165,13 @@ export async function parseJobText(rawText: string): Promise<ParsedJobFields> {
     } catch {
       reason = detail.slice(0, 300);
     }
-    // Logged to Vercel runtime logs for diagnosis; also shown in the admin UI.
     console.error("[parse-job] Anthropic error", {
       status: res.status,
       model: ANTHROPIC_MODEL,
       body: detail.slice(0, 500),
     });
     throw new ParseJobError(
-      `AI service error (${res.status}) [model: ${ANTHROPIC_MODEL}]: ${
+      `AI service error (${res.status}) [claude: ${ANTHROPIC_MODEL}]: ${
         reason || "no error detail returned"
       }. Please try again.`
     );
@@ -101,8 +185,7 @@ export async function parseJobText(rawText: string): Promise<ParsedJobFields> {
   if (!content) {
     throw new ParseJobError("The AI returned an empty response. Please try again.");
   }
-
-  return normalize(content);
+  return content;
 }
 
 // The model is instructed to return bare JSON, but strip stray code fences and
