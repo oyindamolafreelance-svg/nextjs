@@ -1,4 +1,5 @@
 import type { ParsedJobFields } from "@/lib/types";
+import { extractJobFields } from "./extract-job";
 
 // The admin auto-fill works with EITHER provider — whichever key is set:
 //   * GEMINI_API_KEY  → Google Gemini (has a free tier; preferred if present)
@@ -46,18 +47,11 @@ export async function parseJobText(rawText: string): Promise<ParsedJobFields> {
   const geminiKey = process.env.GEMINI_API_KEY;
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
 
-  let content: string;
-  if (geminiKey) {
-    content = await callGemini(geminiKey, text);
-  } else if (anthropicKey) {
-    content = await callAnthropic(anthropicKey, text);
-  } else {
-    throw new ParseJobError(
-      "AI auto-fill isn't configured. Set GEMINI_API_KEY (free tier) or ANTHROPIC_API_KEY, or fill the fields manually."
-    );
-  }
-
-  return normalize(content);
+  // With an AI key set, use the model (best quality). With none, fall back to
+  // the built-in key-free extractor — no network, no billing, always available.
+  if (geminiKey) return normalize(await callGemini(geminiKey, text));
+  if (anthropicKey) return normalize(await callAnthropic(anthropicKey, text));
+  return extractJobFields(text);
 }
 
 // ---------------------------------------------------------------------------
