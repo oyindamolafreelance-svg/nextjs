@@ -3,6 +3,7 @@
 import { useActionState } from "react";
 import Link from "next/link";
 import { loginAction, type AuthFormState } from "@/lib/actions/auth";
+import { PasswordInput } from "@/app/_components/PasswordInput";
 
 const initial: AuthFormState = {};
 
@@ -27,14 +28,17 @@ export function LoginForm({ next }: { next: string }) {
 
       <label className="flex flex-col gap-1 text-sm">
         <span className="font-medium">Password</span>
-        <input
-          type="password"
-          name="password"
-          required
-          autoComplete="current-password"
-          className="rounded-md border border-black/15 bg-transparent px-3 py-2 dark:border-white/20"
-        />
+        <PasswordInput autoComplete="current-password" />
       </label>
+
+      <div className="text-right">
+        <Link
+          href="/forgot-password"
+          className="text-sm text-black/60 underline hover:text-current dark:text-white/60"
+        >
+          Forgot password?
+        </Link>
+      </div>
 
       {state.error && (
         <p className="text-sm text-red-600 dark:text-red-400">{state.error}</p>
