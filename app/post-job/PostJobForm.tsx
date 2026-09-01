@@ -29,6 +29,7 @@ export function PostJobForm() {
   const [aiPending, setAiPending] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
   const [aiFilled, setAiFilled] = useState(false);
+  const [fillSource, setFillSource] = useState<"ai" | "builtin" | null>(null);
 
   // Clear the form once a listing posts successfully.
   useEffect(() => {
@@ -69,6 +70,7 @@ export function PostJobForm() {
         application_instructions:
           parsed.application_instructions || f.application_instructions,
       }));
+      setFillSource(data?.source === "builtin" ? "builtin" : "ai");
       setAiFilled(true);
     } catch {
       setAiError("Auto-fill failed. Please try again.");
@@ -107,7 +109,9 @@ export function PostJobForm() {
           </button>
           {aiFilled && !aiError && (
             <span className="text-sm text-green-700 dark:text-green-400">
-              Fields filled — review and edit below.
+              {fillSource === "builtin"
+                ? "Filled with the built-in extractor (AI was unavailable) — please review and tidy up below."
+                : "Fields filled by AI — review and edit below."}
             </span>
           )}
           {aiError && (

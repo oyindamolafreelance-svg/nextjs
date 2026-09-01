@@ -38,9 +38,16 @@ Rules:
 
 export class ParseJobError extends Error {}
 
-// Turns pasted job text into structured fields using whichever AI provider is
-// configured. Throws ParseJobError with a user-safe message on any failure.
-export async function parseJobText(rawText: string): Promise<ParsedJobFields> {
+export interface ParseResult {
+  fields: ParsedJobFields;
+  source: "ai" | "builtin";
+}
+
+// Turns pasted job text into structured fields. Uses the configured AI provider
+// for best quality, but ALWAYS falls back to the built-in key-free extractor if
+// the AI is unconfigured OR fails for any reason (busy, no credit, bad model,
+// network) — so auto-fill never leaves the admin empty-handed.
+export async function parseJobText(rawText: string): Promise<ParseResult> {
   const text = rawText.trim();
   if (!text) {
     throw new ParseJobError("Paste the job posting text first.");
@@ -49,11 +56,22 @@ export async function parseJobText(rawText: string): Promise<ParsedJobFields> {
   const geminiKey = process.env.GEMINI_API_KEY;
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
 
-  // With an AI key set, use the model (best quality). With none, fall back to
-  // the built-in key-free extractor — no network, no billing, always available.
-  if (geminiKey) return normalize(await callGemini(geminiKey, text));
-  if (anthropicKey) return normalize(await callAnthropic(anthropicKey, text));
-  return extractJobFields(text);
+  if (geminiKey || anthropicKey) {
+    try {
+      const raw = geminiKey
+        ? await callGemini(geminiKey, text)
+        : await callAnthropic(anthropicKey as string, text);
+      return { fields: normalize(raw), source: "ai" };
+    } catch (err) {
+      // AI failed — log why, then quietly fall back to the offline extractor.
+      console.error(
+        "[parse-job] AI unavailable, using built-in extractor:",
+        err instanceof Error ? err.message : err
+      );
+    }
+  }
+
+  return { fields: extractJobFields(text), source: "builtin" };
 }
 
 // ---------------------------------------------------------------------------

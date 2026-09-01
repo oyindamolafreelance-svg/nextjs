@@ -17,8 +17,8 @@ export async function POST(request: Request) {
   }
 
   try {
-    const fields = await parseJobText(rawText);
-    return NextResponse.json({ fields });
+    const { fields, source } = await parseJobText(rawText);
+    return NextResponse.json({ fields, source });
   } catch (err) {
     const message =
       err instanceof ParseJobError ? err.message : "Auto-fill failed. Please try again.";
