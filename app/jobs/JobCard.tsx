@@ -1,6 +1,7 @@
 import type { Job } from "@/lib/types";
 import { ApplyLink } from "./ApplyLink";
 import { JobActions } from "./JobActions";
+import { DraftApplication } from "./DraftApplication";
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString(undefined, {
@@ -62,6 +63,8 @@ export function JobCard({ job, saved = false }: { job: Job; saved?: boolean }) {
         </div>
         <JobActions jobId={job.id} initialSaved={saved} />
       </div>
+
+      <DraftApplication jobId={job.id} />
     </article>
   );
 }
