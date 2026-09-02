@@ -10,6 +10,10 @@ export const dynamic = "force-dynamic";
 // Daily give-to-get threshold (mirrors daily_post_quota() in the DB).
 const DAILY_QUOTA = 5;
 
+// Board is open to every approved member (viewing gate off). Flip to false —
+// and restore can_view_board() from 0008 — to re-enable give-to-get.
+const OPEN_BOARD = true;
+
 // Timezone that decides which calendar day a listing belongs to (so
 // "Today"/"Yesterday" match your local day). Override with NEXT_PUBLIC_SITE_TZ.
 const SITE_TZ = process.env.NEXT_PUBLIC_SITE_TZ || "Africa/Lagos";
@@ -124,7 +128,7 @@ export default async function JobsPage({
   // members' listings. RLS enforces this at the data layer too; this is the
   // friendly UX gate that explains it.
   // Admins and "direct access" (exempt) members skip the give-to-get gate.
-  if (!user.profile.is_admin && !user.profile.is_exempt) {
+  if (!OPEN_BOARD && !user.profile.is_admin && !user.profile.is_exempt) {
     // Effective quota depends on the user's tier (Ambassador = 0 = permanent).
     const { data: quotaData } = await supabase.rpc("my_daily_quota");
     const quota = typeof quotaData === "number" ? quotaData : DAILY_QUOTA;
