@@ -19,6 +19,10 @@ export interface Job {
   description: string | null;
   application_instructions: string | null;
   source: string | null;
+  source_url: string | null;
+  source_name: string | null;
+  external_id: string | null;
+  review_status: string;
   posted_by: string | null;
   date_posted: string;
   expires_at: string | null;

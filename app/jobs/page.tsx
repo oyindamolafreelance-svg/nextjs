@@ -167,6 +167,7 @@ export default async function JobsPage({
     .from("jobs")
     .select("language_pair, domain, work_type")
     .eq("is_active", true)
+    .eq("review_status", "approved")
     .or(activeOr);
 
   const options: FilterOptions = {
@@ -179,6 +180,7 @@ export default async function JobsPage({
     .from("jobs")
     .select("*")
     .eq("is_active", true)
+    .eq("review_status", "approved")
     .or(activeOr)
     .order("date_posted", { ascending: false });
   if (languagePair) query = query.eq("language_pair", languagePair);
