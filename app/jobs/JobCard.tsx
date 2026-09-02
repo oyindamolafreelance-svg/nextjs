@@ -14,40 +14,42 @@ function formatDate(iso: string) {
 // Renders a listing to a member. Deliberately omits `source` (admin-only).
 export function JobCard({ job, saved = false }: { job: Job; saved?: boolean }) {
   return (
-    <article className="flex flex-col gap-3 rounded-lg border border-black/10 p-5 dark:border-white/10">
+    <article className="card flex flex-col gap-3 p-5 transition-shadow hover:shadow-lg">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <h3 className="text-lg font-semibold">{job.title}</h3>
-        <span className="whitespace-nowrap text-xs text-black/50 dark:text-white/50">
-          Posted {formatDate(job.date_posted)}
+        <span className="whitespace-nowrap text-xs muted">
+          {formatDate(job.date_posted)}
         </span>
       </div>
 
       <div className="flex flex-wrap gap-2">
-        <Tag>{job.language_pair}</Tag>
-        <Tag>{job.domain}</Tag>
-        <Tag>{job.work_type}</Tag>
-        {job.experience_required && <Tag muted>{job.experience_required}</Tag>}
+        <span className="chip">{job.language_pair}</span>
+        <span className="chip">{job.domain}</span>
+        <span className="chip">{job.work_type}</span>
+        {job.experience_required && (
+          <span className="chip chip-muted">{job.experience_required}</span>
+        )}
       </div>
 
       {job.description && (
-        <p className="whitespace-pre-line text-sm text-black/80 dark:text-white/80">
+        <p className="whitespace-pre-line text-sm text-[color:var(--fg)]/85">
           {job.description}
         </p>
       )}
 
       {job.application_instructions && (
-        <div className="rounded-md bg-black/[.03] p-3 text-sm text-black/70 dark:bg-white/[.04] dark:text-white/70">
-          <p className="mb-1 text-xs font-medium uppercase tracking-wide text-black/50 dark:text-white/50">
+        <div className="surface-2 rounded-xl p-3 text-sm muted">
+          <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-[color:var(--brand)]">
             How to apply
           </p>
           <p className="whitespace-pre-line">{job.application_instructions}</p>
         </div>
       )}
 
-      <div className="mt-1 flex flex-wrap items-center justify-between gap-3 border-t border-black/5 pt-3 text-sm dark:border-white/5">
+      <div className="mt-1 flex flex-wrap items-center justify-between gap-3 border-t divider pt-3 text-sm">
         <div className="flex flex-wrap items-center gap-3">
           <span>
-            <span className="text-black/50 dark:text-white/50">Apply: </span>
+            <span className="muted">Apply: </span>
             <ApplyLink jobId={job.id} contact={job.apply_contact} />
           </span>
           {job.source_url && (
@@ -55,7 +57,7 @@ export function JobCard({ job, saved = false }: { job: Job; saved?: boolean }) {
               href={job.source_url}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-xs text-black/50 underline hover:text-current dark:text-white/50"
+              className="text-xs muted underline"
             >
               View original ↗
             </a>
@@ -66,26 +68,5 @@ export function JobCard({ job, saved = false }: { job: Job; saved?: boolean }) {
 
       <DraftApplication jobId={job.id} />
     </article>
-  );
-}
-
-function Tag({
-  children,
-  muted,
-}: {
-  children: React.ReactNode;
-  muted?: boolean;
-}) {
-  return (
-    <span
-      className={
-        "rounded-full px-2.5 py-0.5 text-xs font-medium " +
-        (muted
-          ? "border border-black/15 text-black/60 dark:border-white/20 dark:text-white/60"
-          : "bg-black/[.06] text-black/80 dark:bg-white/10 dark:text-white/80")
-      }
-    >
-      {children}
-    </span>
   );
 }
