@@ -1,0 +1,36 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body { font-family: system-ui, sans-serif; width: 320px; margin: 0; padding: 14px; }
+      h1 { font-size: 15px; margin: 0 0 10px; }
+      label { display: block; font-size: 12px; font-weight: 600; margin: 8px 0 3px; }
+      input { width: 100%; box-sizing: border-box; padding: 7px; font-size: 12px; border: 1px solid #ccc; border-radius: 6px; }
+      button { margin-top: 10px; width: 100%; padding: 9px; font-size: 13px; font-weight: 600; border: 0; border-radius: 6px; cursor: pointer; }
+      .primary { background: #111; color: #fff; }
+      .secondary { background: #f0f0f0; color: #111; }
+      #status { font-size: 12px; margin-top: 10px; min-height: 16px; }
+      .ok { color: #15803d; }
+      .err { color: #dc2626; }
+      details { margin-top: 10px; }
+      summary { font-size: 12px; cursor: pointer; color: #555; }
+    </style>
+  </head>
+  <body>
+    <h1>Clip to LinguaBoard</h1>
+    <button id="send" class="primary">Grab this job &amp; send</button>
+    <div id="status"></div>
+
+    <details id="settings">
+      <summary>Settings</summary>
+      <label for="siteUrl">Site URL</label>
+      <input id="siteUrl" placeholder="https://your-app.vercel.app" />
+      <label for="token">Clip token</label>
+      <input id="token" placeholder="clip_…" />
+      <button id="save" class="secondary">Save settings</button>
+    </details>
+
+    <script src="popup.js"></script>
+  </body>
+</html>
