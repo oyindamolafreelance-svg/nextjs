@@ -5,6 +5,7 @@ export interface Profile {
   is_approved: boolean;
   is_admin: boolean;
   is_exempt: boolean;
+  clip_token: string | null;
   created_at: string;
 }
 

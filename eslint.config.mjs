@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Browser-extension source (its own runtime; uses the chrome global).
+    "extension/**",
   ]),
 ]);
 

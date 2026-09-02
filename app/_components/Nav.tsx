@@ -35,6 +35,9 @@ export async function Nav() {
               <Link href="/leaderboard" className="hover:text-current">
                 Leaderboard
               </Link>
+              <Link href="/settings" className="hover:text-current">
+                Settings
+              </Link>
             </>
           )}
           {admin && (
