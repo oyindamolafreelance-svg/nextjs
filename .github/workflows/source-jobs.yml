@@ -1,0 +1,26 @@
+name: Source jobs (near real-time)
+
+# Polls the job sources every 15 minutes so new listings arrive quickly,
+# instead of Vercel's once-a-day cron. Free on GitHub Actions.
+#
+# Requires two repository secrets (Settings → Secrets and variables → Actions):
+#   APP_URL      e.g. https://your-app.vercel.app
+#   CRON_SECRET  the same value set in Vercel
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  poll:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger sourcing run
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          curl -sS -X POST "$APP_URL/api/cron/source-jobs" \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            -w "\nHTTP %{http_code}\n"

@@ -1,4 +1,6 @@
 import { type Connector, type RawJob, isTranslationRole, safeJson } from "./types";
+import { RSS_CONNECTORS } from "./rss";
+import { SCHEMA_CONNECTORS } from "./schema-org";
 
 function stripHtml(html?: string): string {
   if (!html) return "";
@@ -82,11 +84,39 @@ const arbeitnow: Connector = {
   },
 };
 
+const jobicy: Connector = {
+  name: "Jobicy",
+  async fetch() {
+    const data = (await safeJson("https://jobicy.com/api/v2/remote-jobs?count=50")) as {
+      jobs?: Record<string, unknown>[];
+    } | null;
+    const jobs = data?.jobs ?? [];
+    return jobs
+      .filter((j) =>
+        isTranslationRole(
+          String(j.jobTitle ?? ""),
+          `${j.jobIndustry ?? ""} ${j.jobType ?? ""}`
+        )
+      )
+      .map<RawJob>((j) => ({
+        source_name: "Jobicy",
+        external_id: String(j.id),
+        title: String(j.jobTitle ?? "").trim(),
+        description: stripHtml(String(j.jobExcerpt ?? j.jobDescription ?? "")),
+        apply_url: String(j.url ?? ""),
+        company: String(j.companyName ?? ""),
+        posted_at: typeof j.pubDate === "string" ? j.pubDate : undefined,
+      }));
+  },
+};
+
 // --- Applicant tracking systems (public JSON feeds) --------------------------
 // Seed lists — replace/extend with agencies you trust. Wrong slugs just 404
 // and are skipped, so this is safe to grow over time.
-const GREENHOUSE_SLUGS = ["lilt", "smartling", "verbit"];
-const LEVER_SLUGS = ["welocalize"];
+const GREENHOUSE_SLUGS = ["lilt", "smartling", "verbit", "deepl", "unbabel"];
+const LEVER_SLUGS = ["welocalize", "smartcat"];
+const SMARTRECRUITERS_SLUGS = ["TransPerfect", "Lionbridge"];
+const RECRUITEE_SLUGS: string[] = [];
 
 function greenhouse(slug: string): Connector {
   return {
@@ -133,10 +163,59 @@ function lever(slug: string): Connector {
   };
 }
 
+function smartrecruiters(slug: string): Connector {
+  return {
+    name: `SmartRecruiters:${slug}`,
+    async fetch() {
+      const data = (await safeJson(
+        `https://api.smartrecruiters.com/v1/companies/${slug}/postings?limit=100`
+      )) as { content?: Record<string, unknown>[] } | null;
+      const jobs = data?.content ?? [];
+      return jobs
+        .filter((j) => isTranslationRole(String(j.name ?? "")))
+        .map<RawJob>((j) => ({
+          source_name: `SmartRecruiters:${slug}`,
+          external_id: String(j.id),
+          title: String(j.name ?? "").trim(),
+          apply_url: `https://jobs.smartrecruiters.com/${slug}/${j.id}`,
+          company: slug,
+          posted_at: typeof j.releasedDate === "string" ? j.releasedDate : undefined,
+        }));
+    },
+  };
+}
+
+function recruitee(slug: string): Connector {
+  return {
+    name: `Recruitee:${slug}`,
+    async fetch() {
+      const data = (await safeJson(`https://${slug}.recruitee.com/api/offers/`)) as {
+        offers?: Record<string, unknown>[];
+      } | null;
+      const jobs = data?.offers ?? [];
+      return jobs
+        .filter((j) => isTranslationRole(String(j.title ?? "")))
+        .map<RawJob>((j) => ({
+          source_name: `Recruitee:${slug}`,
+          external_id: String(j.id),
+          title: String(j.title ?? "").trim(),
+          description: stripHtml(String(j.description ?? "")),
+          apply_url: String(j.careers_url ?? j.careers_apply_url ?? ""),
+          company: slug,
+        }));
+    },
+  };
+}
+
 export const CONNECTORS: Connector[] = [
   remotive,
   remoteok,
   arbeitnow,
+  jobicy,
   ...GREENHOUSE_SLUGS.map(greenhouse),
   ...LEVER_SLUGS.map(lever),
+  ...SMARTRECRUITERS_SLUGS.map(smartrecruiters),
+  ...RECRUITEE_SLUGS.map(recruitee),
+  ...RSS_CONNECTORS,
+  ...SCHEMA_CONNECTORS,
 ];
