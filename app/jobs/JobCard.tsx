@@ -44,9 +44,21 @@ export function JobCard({ job, saved = false }: { job: Job; saved?: boolean }) {
       )}
 
       <div className="mt-1 flex flex-wrap items-center justify-between gap-3 border-t border-black/5 pt-3 text-sm dark:border-white/5">
-        <div>
-          <span className="text-black/50 dark:text-white/50">Apply: </span>
-          <ApplyLink jobId={job.id} contact={job.apply_contact} />
+        <div className="flex flex-wrap items-center gap-3">
+          <span>
+            <span className="text-black/50 dark:text-white/50">Apply: </span>
+            <ApplyLink jobId={job.id} contact={job.apply_contact} />
+          </span>
+          {job.source_url && (
+            <a
+              href={job.source_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-black/50 underline hover:text-current dark:text-white/50"
+            >
+              View original ↗
+            </a>
+          )}
         </div>
         <JobActions jobId={job.id} initialSaved={saved} />
       </div>

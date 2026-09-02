@@ -42,6 +42,9 @@ export async function Nav() {
               <Link href="/admin/approvals" className="hover:text-current">
                 Approvals
               </Link>
+              <Link href="/admin/sourced" className="hover:text-current">
+                Sourced
+              </Link>
               <Link href="/admin/reports" className="hover:text-current">
                 Reports
               </Link>
