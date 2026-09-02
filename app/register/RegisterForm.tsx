@@ -19,7 +19,7 @@ export function RegisterForm() {
           name="full_name"
           required
           autoComplete="name"
-          className="rounded-md border border-black/15 bg-transparent px-3 py-2 dark:border-white/20"
+          className="input"
         />
       </label>
 
@@ -30,7 +30,7 @@ export function RegisterForm() {
           name="email"
           required
           autoComplete="email"
-          className="rounded-md border border-black/15 bg-transparent px-3 py-2 dark:border-white/20"
+          className="input"
         />
       </label>
 
@@ -49,7 +49,7 @@ export function RegisterForm() {
       <button
         type="submit"
         disabled={pending}
-        className="mt-1 rounded-md bg-black px-4 py-2 text-sm font-medium text-white disabled:opacity-60 dark:bg-white dark:text-black"
+        className="btn btn-primary mt-1"
       >
         {pending ? "Creating account…" : "Create account"}
       </button>

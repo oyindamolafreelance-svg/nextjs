@@ -87,7 +87,7 @@ export function ResetPasswordForm() {
       <button
         type="submit"
         disabled={status === "saving" || ready !== "ok"}
-        className="mt-1 rounded-md bg-black px-4 py-2 text-sm font-medium text-white disabled:opacity-60 dark:bg-white dark:text-black"
+        className="btn btn-primary mt-1"
       >
         {status === "saving"
           ? "Saving…"

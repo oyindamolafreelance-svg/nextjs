@@ -31,10 +31,12 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col">
         <Nav />
-        <main className="mx-auto w-full max-w-5xl flex-1 px-6 py-8">{children}</main>
-        <footer className="border-t border-black/10 px-6 py-6 text-center text-xs text-black/50 dark:border-white/10 dark:text-white/50">
-          LinguaBoard · A private board for translation &amp; localization
-          professionals
+        <main className="mx-auto w-full max-w-5xl flex-1 px-5 py-8 sm:px-6">{children}</main>
+        <footer className="mt-8 border-t divider px-6 py-8 text-center text-xs muted">
+          <p className="font-semibold text-[color:var(--fg)]">LinguaBoard</p>
+          <p className="mt-1">
+            A curated board for translation &amp; localization professionals.
+          </p>
         </footer>
       </body>
     </html>
