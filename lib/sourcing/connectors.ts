@@ -117,6 +117,8 @@ const GREENHOUSE_SLUGS = ["lilt", "smartling", "verbit", "deepl", "unbabel"];
 const LEVER_SLUGS = ["welocalize", "smartcat"];
 const SMARTRECRUITERS_SLUGS = ["TransPerfect", "Lionbridge"];
 const RECRUITEE_SLUGS: string[] = [];
+// Workable account subdomains (edit freely; wrong ones just return nothing).
+const WORKABLE_SLUGS: string[] = ["acolad", "andovar"];
 
 function greenhouse(slug: string): Connector {
   return {
@@ -207,6 +209,35 @@ function recruitee(slug: string): Connector {
   };
 }
 
+function workable(slug: string): Connector {
+  return {
+    name: `Workable:${slug}`,
+    async fetch() {
+      const data = (await safeJson(
+        `https://apply.workable.com/api/v1/widget/accounts/${slug}?details=true`
+      )) as { jobs?: Record<string, unknown>[] } | null;
+      const jobs = data?.jobs ?? [];
+      return jobs
+        .filter((j) => isTranslationRole(String(j.title ?? j.full_title ?? "")))
+        .map<RawJob>((j) => {
+          const shortcode = String(j.shortcode ?? j.code ?? j.id ?? "");
+          const url =
+            String(j.application_url ?? j.url ?? "") ||
+            `https://apply.workable.com/${slug}/j/${shortcode}/`;
+          return {
+            source_name: `Workable:${slug}`,
+            external_id: shortcode || url,
+            title: String(j.title ?? j.full_title ?? "").trim(),
+            description: stripHtml(String(j.description ?? "")),
+            apply_url: url,
+            company: slug,
+            posted_at: typeof j.created_at === "string" ? j.created_at : undefined,
+          };
+        });
+    },
+  };
+}
+
 export const CONNECTORS: Connector[] = [
   remotive,
   remoteok,
@@ -216,6 +247,7 @@ export const CONNECTORS: Connector[] = [
   ...LEVER_SLUGS.map(lever),
   ...SMARTRECRUITERS_SLUGS.map(smartrecruiters),
   ...RECRUITEE_SLUGS.map(recruitee),
+  ...WORKABLE_SLUGS.map(workable),
   ...RSS_CONNECTORS,
   ...SCHEMA_CONNECTORS,
 ];
