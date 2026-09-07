@@ -10,9 +10,9 @@ export const dynamic = "force-dynamic";
 // Daily give-to-get threshold (mirrors daily_post_quota() in the DB).
 const DAILY_QUOTA = 5;
 
-// Board is open to every approved member (viewing gate off). Flip to false —
-// and restore can_view_board() from 0008 — to re-enable give-to-get.
-const OPEN_BOARD = true;
+// Give-to-get gate ON: members must meet their daily post quota to browse
+// others' jobs. Set true (and open can_view_board()) to remove the gate.
+const OPEN_BOARD = false;
 
 // Timezone that decides which calendar day a listing belongs to (so
 // "Today"/"Yesterday" match your local day). Override with NEXT_PUBLIC_SITE_TZ.
@@ -239,12 +239,13 @@ export default async function JobsPage({
           <div className="flex flex-col gap-8">
             {groupByDay(jobs).map((group) => (
               <section key={group.label} className="flex flex-col gap-4">
-                <h2 className="flex items-baseline gap-2 border-b border-black/10 pb-1 text-sm font-semibold dark:border-white/10">
-                  {group.label}
-                  <span className="text-xs font-normal text-black/40 dark:text-white/40">
+                <div className="sticky top-[56px] z-10 -mx-1 flex items-center gap-3 bg-[color:var(--bg)]/90 px-1 py-1.5 backdrop-blur">
+                  <h2 className="text-sm font-semibold">{group.label}</h2>
+                  <span className="chip chip-muted">
                     {group.items.length} job{group.items.length === 1 ? "" : "s"}
                   </span>
-                </h2>
+                  <span className="h-px flex-1 bg-[color:var(--border)]" />
+                </div>
                 <div className="grid gap-4">
                   {group.items.map((job) => (
                     <JobCard
