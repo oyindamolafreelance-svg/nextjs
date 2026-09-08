@@ -1,7 +1,12 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { loadOffice, isSupportedOffice, type OfficeDoc } from "@/lib/docs/office";
+import {
+  loadDocument,
+  isSupportedDoc,
+  pdfSupportsLanguage,
+  type LoadedDoc,
+} from "@/lib/docs";
 import { LANGUAGES, isLowResource } from "@/lib/docs/languages";
 import { DOMAINS } from "@/lib/ai/glossaries";
 import { startDocJob, finishDocJob } from "@/lib/actions/doc";
@@ -52,10 +57,13 @@ export function TranslateClient({
     setDownload(null);
   }
 
+  const isPdfFile = Boolean(file && file.name.toLowerCase().endsWith(".pdf"));
+  const pdfLangBlocked = isPdfFile && !pdfSupportsLanguage(targetLang);
+
   function onPick(f: File | null) {
     reset();
-    if (f && !isSupportedOffice(f.name)) {
-      setError("Unsupported file. Phase 1 supports .docx, .pptx and .xlsx (PDF & scans are coming next).");
+    if (f && !isSupportedDoc(f.name)) {
+      setError("Unsupported file. Supported: .docx, .pptx, .xlsx and digital .pdf (scanned PDFs are coming next).");
       setFile(null);
       return;
     }
@@ -93,14 +101,18 @@ export function TranslateClient({
     try {
       // 1. Parse the document in the browser.
       setPhase("reading");
-      let doc: OfficeDoc;
+      let doc: LoadedDoc;
       try {
-        doc = await loadOffice(file);
+        doc = await loadDocument(file);
       } catch (e) {
         throw new Error(e instanceof Error ? e.message : "Couldn't read that file.");
       }
       if (doc.segments.length === 0) {
-        throw new Error("No translatable text was found in this document.");
+        throw new Error(
+          doc.kind === "pdf"
+            ? "No selectable text found — this looks like a scanned PDF. Scanned-PDF support (OCR) is coming next."
+            : "No translatable text was found in this document."
+        );
       }
 
       // 2. Detect domain + source language from a sample.
@@ -184,7 +196,7 @@ export function TranslateClient({
         <input
           ref={inputRef}
           type="file"
-          accept=".docx,.pptx,.xlsx"
+          accept=".docx,.pptx,.xlsx,.pdf"
           disabled={busy}
           onChange={(e) => onPick(e.target.files?.[0] ?? null)}
           className="block w-full text-sm file:mr-3 file:rounded-md file:border-0 file:bg-[color:var(--brand)] file:px-4 file:py-2 file:text-sm file:font-medium file:text-white"
@@ -195,8 +207,8 @@ export function TranslateClient({
           </p>
         )}
         <p className="mt-2 text-xs muted">
-          Phase 1 supports Word (.docx), PowerPoint (.pptx) and Excel (.xlsx).
-          PDF and scanned documents are coming in the next phases.
+          Supported: Word (.docx), PowerPoint (.pptx), Excel (.xlsx), and digital
+          PDFs (real text, not scans). Scanned-PDF (OCR) support is coming next.
         </p>
       </div>
 
@@ -252,6 +264,15 @@ export function TranslateClient({
         </div>
       </div>
 
+      {pdfLangBlocked && (
+        <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-300">
+          PDF output into <strong>{targetLang}</strong> isn&apos;t supported yet
+          (its script needs an embedded font — a coming enhancement). For now,
+          pick a Western-European target for PDFs, or use a Word/PowerPoint/Excel
+          file, which supports every language.
+        </div>
+      )}
+
       {isLowResource(targetLang) && (
         <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-300">
           <strong>{targetLang}</strong> is a lower-resource language — free AI
@@ -278,7 +299,7 @@ export function TranslateClient({
         <button
           type="button"
           className="btn btn-primary"
-          disabled={!file || busy || (!unlimited && remaining <= 0)}
+          disabled={!file || busy || pdfLangBlocked || (!unlimited && remaining <= 0)}
           onClick={run}
         >
           {phase === "reading" && "Reading…"}

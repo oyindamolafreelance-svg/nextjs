@@ -105,14 +105,22 @@ review + edit + export
 - [ ] Write translated text back into the same nodes, re-zip, download.
 - [ ] Handles text expansion automatically (Office reflows) → highest fidelity.
 
-### Phase 2 — Digital (text) PDF — overlay approach
-- [ ] Browser: `pdfjs-dist` extracts text items + transforms per page; group
-      into lines/blocks.
-- [ ] Translate blocks; auto-fit font size to the original box to absorb
-      length changes (the ~20–30% expansion the spec warns about).
-- [ ] `pdf-lib`: keep the original page (logos/images/vectors stay), draw white
-      rectangles over original text spans, render translated text in place.
-- [ ] Export translated PDF; optional DOCX export for editing.
+### Phase 2 — Digital (text) PDF — overlay approach ✅ (beta)
+- [x] Browser: `pdfjs-dist` extracts text items + transforms per page; grouped
+      into visual lines (`lib/docs/pdf.ts`).
+- [x] Translate line-by-line; auto-fit font size to the original line width.
+- [x] `pdf-lib`: keep the original page (logos/images/vectors stay), cover
+      original lines with white boxes, render the translation in place.
+- [x] Export translated PDF; uniform pipeline shape shared with Office
+      (`lib/docs/index.ts`, `lib/docs/types.ts`).
+- Known limits (surfaced in the UI, to lift later): PDF standard fonts
+      (WinAnsi) → Western-European target languages only for now; other scripts
+      need an embedded Unicode font (follow-up). Best on white-background PDFs.
+      Scanned PDFs (no text layer) are Phase 3. **Needs a real-browser smoke
+      test on a sample PDF** — the pure geometry/logic is unit-checked, but
+      pdf.js worker + overlay rendering can only be verified in a browser.
+- [ ] Follow-up: embed a bundled Noto font (fontkit) for full-script PDF output
+      + optional editable-DOCX export from a PDF.
 
 ### Phase 3 — Scanned PDF / images — OCR + faithful rebuild, then translate
 Requested behaviour: for a scan/photo, first **recreate the document as an
