@@ -122,24 +122,25 @@ review + edit + export
 - [ ] Follow-up: embed a bundled Noto font (fontkit) for full-script PDF output
       + optional editable-DOCX export from a PDF.
 
-### Phase 3 — Scanned PDF / images — OCR + faithful rebuild, then translate
-Requested behaviour: for a scan/photo, first **recreate the document as an
-editable file that mirrors the original** (layout, font size, bold/italic,
-positions, embedded logos/images), and only **then** translate that clean
-editable copy.
-- [ ] Browser: render page to canvas, run `tesseract.js` → words + bounding
-      boxes + estimated font size + detected language.
-- [ ] **Reconstruct → editable DOCX** (via `docx`) that mirrors the scan:
-      same layout blocks, font *size*, bold/italic, positions, and re-embedded
-      images/logos. Honest limit of free tools: the *exact* original typeface
-      can't be reliably identified from pixels, so match a close family
-      (serif→Times-like, sans→Arial-like). Output is visually near-identical
-      and fully editable, flagged for a quick human glance.
-- [ ] Offer the faithful **untranslated** rebuild as its own output (a useful
-      "scan → editable Word" tool on its own), then run translation on it.
-- [ ] Also overlay-translate the original PDF where a PDF (not Word) output is
-      wanted; keep font size/box fit.
-- [ ] Clearly flag OCR output as "machine OCR — verify before sending."
+### Phase 3 — Scanned PDF / images — OCR + editable rebuild, then translate ✅ (v1)
+Requested behaviour: for a scan/photo, rebuild it as an **editable file that
+mirrors the original**, then translate that clean copy.
+- [x] Browser OCR with `tesseract.js` (`lib/docs/ocr.ts`); scanned PDFs are
+      rendered to canvas per page via pdf.js, then OCR'd. Source-language →
+      OCR language pack mapping; the dispatcher auto-falls-back to OCR when a
+      PDF has no text layer, and always OCRs images.
+- [x] **Reconstruct → editable DOCX** (via `docx`): paragraphs in reading
+      order, **relative font size** derived from OCR line heights (DPI-
+      independent), and inferred alignment. Then translate and emit the DOCX.
+- [x] OCR + machine-translation output is clearly flagged "review before use";
+      progress bar during OCR; first run downloads the engine.
+- v1 honest limits (stated in the UI): reconstructs editable text with
+      approximate size/structure/alignment — **not** pixel-exact positions, the
+      exact original typeface, or embedded logos/figures. OCR can misread.
+- [ ] Follow-up: image-region detection to re-embed logos/figures; bold/italic
+      detection; closer font-family matching; offer the untranslated rebuild as
+      its own "scan → editable Word" output; overlay-translate back onto the
+      original PDF when PDF (not Word) output is wanted.
 
 ### Phase 4 — Review, edit & polish
 - [ ] Side-by-side original vs. translated viewer.

@@ -11,7 +11,7 @@ import { LANGUAGES, isLowResource } from "@/lib/docs/languages";
 import { DOMAINS } from "@/lib/ai/glossaries";
 import { startDocJob, finishDocJob } from "@/lib/actions/doc";
 
-type Phase = "idle" | "reading" | "detecting" | "translating" | "done" | "error";
+type Phase = "idle" | "reading" | "ocr" | "detecting" | "translating" | "done" | "error";
 
 // How many paragraph segments to send per request — keeps each serverless call
 // well under the function timeout.
@@ -20,6 +20,7 @@ const CHUNK = 40;
 interface DownloadReady {
   url: string;
   filename: string;
+  ocr: boolean;
 }
 
 export function TranslateClient({
@@ -43,9 +44,11 @@ export function TranslateClient({
   );
   const [error, setError] = useState<string | null>(null);
   const [download, setDownload] = useState<DownloadReady | null>(null);
+  const [ocrLabel, setOcrLabel] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const busy = phase === "reading" || phase === "detecting" || phase === "translating";
+  const busy =
+    phase === "reading" || phase === "ocr" || phase === "detecting" || phase === "translating";
   const remaining = Math.max(0, allowance - used);
 
   function reset() {
@@ -58,22 +61,26 @@ export function TranslateClient({
   }
 
   const isPdfFile = Boolean(file && file.name.toLowerCase().endsWith(".pdf"));
-  const pdfLangBlocked = isPdfFile && !pdfSupportsLanguage(targetLang);
+  // Informational only: digital PDFs keep the PDF and use standard fonts, so
+  // non-Western scripts aren't supported for *digital* PDFs. Scanned PDFs are
+  // rebuilt as .docx and support every language, so this is a soft hint, not a
+  // hard block (accurate enforcement happens after we know the PDF's type).
+  const pdfLangHint = isPdfFile && !pdfSupportsLanguage(targetLang);
 
   function onPick(f: File | null) {
     reset();
     if (f && !isSupportedDoc(f.name)) {
-      setError("Unsupported file. Supported: .docx, .pptx, .xlsx and digital .pdf (scanned PDFs are coming next).");
+      setError("Unsupported file. Supported: Word/PowerPoint/Excel, PDF, and images (.png/.jpg).");
       setFile(null);
       return;
     }
     setFile(f);
   }
 
-  function outName(original: string, lang: string): string {
+  function outName(original: string, lang: string, outputExt?: string): string {
     const dot = original.lastIndexOf(".");
     const base = dot === -1 ? original : original.slice(0, dot);
-    const ext = dot === -1 ? "" : original.slice(dot);
+    const ext = outputExt ? `.${outputExt}` : dot === -1 ? "" : original.slice(dot);
     const tag = lang.replace(/[^a-z0-9]+/gi, "-").toLowerCase();
     return `${base}.${tag}${ext}`;
   }
@@ -99,19 +106,29 @@ export function TranslateClient({
     reset();
     let jobId: string | null = null;
     try {
-      // 1. Parse the document in the browser.
+      // 1. Parse the document in the browser (OCR runs here for scans/images).
       setPhase("reading");
       let doc: LoadedDoc;
       try {
-        doc = await loadDocument(file);
+        doc = await loadDocument(file, {
+          sourceLang,
+          onOcrProgress: (frac, label) => {
+            setPhase("ocr");
+            setProgress(Math.round(frac * 100));
+            setOcrLabel(label);
+          },
+        });
       } catch (e) {
         throw new Error(e instanceof Error ? e.message : "Couldn't read that file.");
       }
       if (doc.segments.length === 0) {
+        throw new Error("No translatable text was found in this document.");
+      }
+      // Accurate enforcement now that we know the type: digital PDFs (kept as
+      // PDF, standard fonts) only support Western-European target scripts.
+      if (doc.kind === "pdf" && !doc.ocr && !pdfSupportsLanguage(targetLang)) {
         throw new Error(
-          doc.kind === "pdf"
-            ? "No selectable text found — this looks like a scanned PDF. Scanned-PDF support (OCR) is coming next."
-            : "No translatable text was found in this document."
+          `Digital PDFs can't yet be translated into ${targetLang} (its script needs an embedded font). Pick a Western-European target, or convert the PDF to Word first.`
         );
       }
 
@@ -153,6 +170,7 @@ export function TranslateClient({
 
       // 4. Translate in chunks (sequential — friendly to free-tier rate limits).
       setPhase("translating");
+      setProgress(0);
       const all = doc.segments;
       const output = new Array<string>(all.length);
       let done = 0;
@@ -167,7 +185,11 @@ export function TranslateClient({
       // 5. Rebuild the file and offer the download.
       const blob = await doc.build(output);
       const url = URL.createObjectURL(blob);
-      setDownload({ url, filename: outName(file.name, targetLang) });
+      setDownload({
+        url,
+        filename: outName(file.name, targetLang, doc.outputExt),
+        ocr: Boolean(doc.ocr),
+      });
       setPhase("done");
       await finishDocJob(jobId, "complete");
     } catch (e) {
@@ -196,7 +218,7 @@ export function TranslateClient({
         <input
           ref={inputRef}
           type="file"
-          accept=".docx,.pptx,.xlsx,.pdf"
+          accept=".docx,.pptx,.xlsx,.pdf,.png,.jpg,.jpeg,.webp"
           disabled={busy}
           onChange={(e) => onPick(e.target.files?.[0] ?? null)}
           className="block w-full text-sm file:mr-3 file:rounded-md file:border-0 file:bg-[color:var(--brand)] file:px-4 file:py-2 file:text-sm file:font-medium file:text-white"
@@ -207,8 +229,10 @@ export function TranslateClient({
           </p>
         )}
         <p className="mt-2 text-xs muted">
-          Supported: Word (.docx), PowerPoint (.pptx), Excel (.xlsx), and digital
-          PDFs (real text, not scans). Scanned-PDF (OCR) support is coming next.
+          Word (.docx), PowerPoint (.pptx), Excel (.xlsx), and digital PDFs keep
+          their layout. Scanned PDFs and images (.png/.jpg) are read with OCR and
+          rebuilt as an editable Word file — the first OCR run downloads the
+          engine, and OCR output should always be reviewed.
         </p>
       </div>
 
@@ -264,12 +288,12 @@ export function TranslateClient({
         </div>
       </div>
 
-      {pdfLangBlocked && (
+      {pdfLangHint && (
         <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-300">
-          PDF output into <strong>{targetLang}</strong> isn&apos;t supported yet
-          (its script needs an embedded font — a coming enhancement). For now,
-          pick a Western-European target for PDFs, or use a Word/PowerPoint/Excel
-          file, which supports every language.
+          If this is a <strong>digital</strong> PDF, output into{" "}
+          <strong>{targetLang}</strong> isn&apos;t supported yet (its script needs
+          an embedded font). Scanned PDFs are fine — they&apos;re rebuilt as Word,
+          which supports every language.
         </div>
       )}
 
@@ -299,10 +323,11 @@ export function TranslateClient({
         <button
           type="button"
           className="btn btn-primary"
-          disabled={!file || busy || pdfLangBlocked || (!unlimited && remaining <= 0)}
+          disabled={!file || busy || (!unlimited && remaining <= 0)}
           onClick={run}
         >
           {phase === "reading" && "Reading…"}
+          {phase === "ocr" && `Reading text (OCR)… ${progress}%`}
           {phase === "detecting" && "Detecting domain…"}
           {phase === "translating" && `Translating… ${progress}%`}
           {(phase === "idle" || phase === "done" || phase === "error") && "Translate document"}
@@ -315,12 +340,17 @@ export function TranslateClient({
       </div>
 
       {/* Progress bar */}
-      {phase === "translating" && (
-        <div className="h-2 w-full overflow-hidden rounded-full bg-black/10 dark:bg-white/10">
-          <div
-            className="h-full rounded-full bg-[color:var(--brand)] transition-all"
-            style={{ width: `${progress}%` }}
-          />
+      {(phase === "translating" || phase === "ocr") && (
+        <div className="flex flex-col gap-1">
+          {phase === "ocr" && ocrLabel && (
+            <span className="text-xs muted capitalize">{ocrLabel}</span>
+          )}
+          <div className="h-2 w-full overflow-hidden rounded-full bg-black/10 dark:bg-white/10">
+            <div
+              className="h-full rounded-full bg-[color:var(--brand)] transition-all"
+              style={{ width: `${progress}%` }}
+            />
+          </div>
         </div>
       )}
 
@@ -328,7 +358,9 @@ export function TranslateClient({
       {phase === "done" && download && (
         <div className="rounded-lg border border-green-500/40 bg-green-500/10 p-4 text-sm">
           <p className="font-medium text-green-700 dark:text-green-300">
-            Translation ready — layout preserved.
+            {download.ocr
+              ? "Translation ready — rebuilt as an editable Word file."
+              : "Translation ready — layout preserved."}
           </p>
           <a
             href={download.url}
@@ -338,7 +370,9 @@ export function TranslateClient({
             Download {download.filename}
           </a>
           <p className="mt-2 text-xs muted">
-            Machine translation — review before professional use.
+            {download.ocr
+              ? "Read from a scan with OCR and machine-translated — check the text and layout before use."
+              : "Machine translation — review before professional use."}
           </p>
         </div>
       )}

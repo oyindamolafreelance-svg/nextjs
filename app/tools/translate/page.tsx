@@ -19,9 +19,10 @@ export default async function TranslatePage() {
       <div>
         <h1 className="text-2xl font-semibold">Document translator</h1>
         <p className="mt-1 text-sm muted">
-          Upload a Word, PowerPoint or Excel file. We detect the domain, apply
-          the matching terminology, and translate in your browser — the original
-          layout, tables and images stay intact.
+          Upload a Word, PowerPoint, Excel or PDF file — or a scan/photo. We
+          detect the domain, apply the matching terminology, and translate in
+          your browser. Office files and digital PDFs keep their layout; scans
+          and images are read with OCR and rebuilt as an editable Word file.
         </p>
       </div>
       <TranslateClient
