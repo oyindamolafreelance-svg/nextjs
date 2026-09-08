@@ -1,14 +1,16 @@
 import { DOMAINS, domainInstruction, type DomainId } from "./glossaries";
 
 // Shared translation engine for the document translator. Runs server-side
-// (route handlers) and reuses the same free-tier providers as job auto-fill:
-//   * GEMINI_API_KEY    → Google Gemini (free tier; preferred)
-//   * ANTHROPIC_API_KEY → Anthropic Claude
-// Unlike the job extractor there is no offline fallback — machine translation
-// genuinely needs a model — so if no provider is configured/reachable we throw
-// a clear, user-facing error instead of returning garbage.
+// (route handlers) and uses whichever free-tier providers are configured, in
+// order, falling through on failure/overload:
+//   * GEMINI_API_KEY    → Google Gemini (free tier; best quality; preferred)
+//   * GROQ_API_KEY      → Groq (genuinely free, no card; great when Gemini 503s)
+//   * ANTHROPIC_API_KEY → Anthropic Claude (if available)
+// Machine translation genuinely needs a model — there is no offline fallback —
+// so if no provider is configured/reachable we throw a clear, user-facing error.
 const GEMINI_MODEL = process.env.GEMINI_MODEL ?? "gemini-3.6-flash";
 const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL ?? "claude-sonnet-5";
+const GROQ_MODEL = process.env.GROQ_MODEL ?? "llama-3.3-70b-versatile";
 
 export class TranslateError extends Error {}
 
@@ -24,7 +26,9 @@ const MAX_SEGMENTS_PER_BATCH = 40;
 const MAX_CHARS_PER_BATCH = 4000;
 
 function hasProvider(): boolean {
-  return Boolean(process.env.GEMINI_API_KEY || process.env.ANTHROPIC_API_KEY);
+  return Boolean(
+    process.env.GEMINI_API_KEY || process.env.GROQ_API_KEY || process.env.ANTHROPIC_API_KEY
+  );
 }
 
 export function providerConfigured(): boolean {
@@ -206,23 +210,29 @@ async function translateBatch(
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 async function callProvider(system: string, user: string): Promise<string> {
-  const gemini = process.env.GEMINI_API_KEY;
-  const anthropic = process.env.ANTHROPIC_API_KEY;
-  if (gemini) {
+  // Ordered list of configured providers; each is tried until one succeeds.
+  const providers: { name: string; fn: () => Promise<string> }[] = [];
+  if (process.env.GEMINI_API_KEY) providers.push({ name: "gemini", fn: () => geminiJson(system, user) });
+  if (process.env.GROQ_API_KEY) providers.push({ name: "groq", fn: () => groqJson(system, user) });
+  if (process.env.ANTHROPIC_API_KEY)
+    providers.push({ name: "anthropic", fn: () => anthropicJson(system, user) });
+
+  if (providers.length === 0) {
+    throw new TranslateError("Translation isn't configured on the server yet (no AI key).");
+  }
+
+  let lastErr: unknown = null;
+  for (const p of providers) {
     try {
-      return await geminiJson(system, user);
+      return await p.fn();
     } catch (err) {
-      if (anthropic) {
-        console.warn("[translate] Gemini failed, falling back to Anthropic:", err);
-        return await anthropicJson(system, user);
-      }
-      throw err;
+      lastErr = err;
+      console.warn(`[translate] provider ${p.name} failed, trying next:`, err);
     }
   }
-  if (anthropic) return await anthropicJson(system, user);
-  throw new TranslateError(
-    "Translation isn't configured on the server yet (no AI key)."
-  );
+  throw lastErr instanceof TranslateError
+    ? lastErr
+    : new TranslateError("All translation providers are busy right now. Please try again.");
 }
 
 // Statuses worth retrying: rate-limit + transient server/overload errors.
@@ -296,6 +306,58 @@ async function geminiJson(system: string, user: string): Promise<string> {
   }
   if (lastStatus === 503) {
     throw new TranslateError("The AI is overloaded right now (503). Please try again in a moment.");
+  }
+  throw new TranslateError(`Translation service error (${lastStatus || "network"}). Please try again.`);
+}
+
+// Groq — free, no credit card. OpenAI-compatible chat completions. We don't use
+// JSON-object response mode (our payloads are JSON arrays); extractJson pulls
+// the array out of the reply.
+async function groqJson(system: string, user: string): Promise<string> {
+  const apiKey = process.env.GROQ_API_KEY as string;
+  const body = JSON.stringify({
+    model: GROQ_MODEL,
+    temperature: 0.2,
+    max_tokens: 8000,
+    messages: [
+      { role: "system", content: system },
+      { role: "user", content: user },
+    ],
+  });
+
+  const MAX_ATTEMPTS = 4;
+  let lastStatus = 0;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    let res: Response;
+    try {
+      res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+        body,
+      });
+    } catch {
+      if (attempt < MAX_ATTEMPTS) {
+        await sleep(500 * 2 ** (attempt - 1));
+        continue;
+      }
+      throw new TranslateError("Couldn't reach the translation service. Please try again.");
+    }
+
+    if (res.ok) {
+      const json = await res.json().catch(() => null);
+      const out: string = json?.choices?.[0]?.message?.content ?? "";
+      if (!out) throw new TranslateError("The translation service returned no text. Please try again.");
+      return out;
+    }
+
+    lastStatus = res.status;
+    const detail = await res.text().catch(() => "");
+    console.error("[translate] Groq error", { status: res.status, attempt, body: detail.slice(0, 300) });
+    if (RETRYABLE.has(res.status) && attempt < MAX_ATTEMPTS) {
+      await sleep(800 * 2 ** (attempt - 1) + Math.random() * 300);
+      continue;
+    }
+    break;
   }
   throw new TranslateError(`Translation service error (${lastStatus || "network"}). Please try again.`);
 }
