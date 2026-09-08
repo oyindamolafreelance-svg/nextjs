@@ -4,7 +4,7 @@ import { loadPdf } from "./pdf";
 import { loadImageOcr, loadScannedPdfOcr, tesseractLangFor, type OcrOptions } from "./ocr";
 
 export type { LoadedDoc, DocKind } from "./types";
-export { pdfSupportsLanguage, PDF_TARGET_LANGUAGES } from "./pdf";
+export { pdfSupportsLanguage } from "./pdf";
 export { tesseractLangFor } from "./ocr";
 
 function isPdf(name: string): boolean {
@@ -33,6 +33,8 @@ export interface LoadOptions {
   // Source language the user picked ("auto" or a display name) — used to select
   // the OCR language pack for scans.
   sourceLang?: string;
+  // Target language — used to pick/embed the right font for PDF output.
+  targetLang?: string;
   onOcrProgress?: (fraction: number, label: string) => void;
 }
 
@@ -49,7 +51,7 @@ export async function loadDocument(file: File, opts: LoadOptions = {}): Promise<
     return loadImageOcr(file, ocrOpts);
   }
   if (isPdf(file.name)) {
-    const digital = await loadPdf(file);
+    const digital = await loadPdf(file, opts.targetLang);
     if (digital.segments.length > 0) return digital;
     // No text layer → scanned PDF → OCR path.
     return loadScannedPdfOcr(await file.arrayBuffer(), ocrOpts);

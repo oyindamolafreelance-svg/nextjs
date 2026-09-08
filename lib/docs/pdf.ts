@@ -7,35 +7,19 @@
 // so logos, images, rules and overall layout are preserved.
 //
 // Honest limits of the free approach (surfaced in the UI):
-//   * Uses PDF standard fonts (WinAnsi), so target languages are limited to
-//     Western-European scripts for now. Other scripts (CJK, Arabic, Cyrillic,
-//     Indic, and even Polish/Turkish/Czech accents) need an embedded Unicode
-//     font — a later enhancement. Use the Office path for those meanwhile.
+//   * Western-European targets use PDF standard fonts; other scripts (Chinese,
+//     Japanese, Korean, Cyrillic, Greek, Arabic, …) embed a Noto font fetched
+//     at runtime (see fonts.ts). A language with neither is still unsupported.
 //   * The cover box is white, so results are cleanest on white-background PDFs.
 //   * Scanned PDFs have no text layer — those are Phase 3 (OCR).
 
 import { PDFDocument, StandardFonts, rgb, type PDFFont } from "pdf-lib";
+import fontkit from "@pdf-lib/fontkit";
 import type { LoadedDoc } from "./types";
-
-// Target languages whose characters fit the PDF standard-font (WinAnsi)
-// encoding. Others are blocked for PDF output (but work via Office).
-export const PDF_TARGET_LANGUAGES = [
-  "English",
-  "Spanish",
-  "French",
-  "German",
-  "Portuguese",
-  "Italian",
-  "Dutch",
-  "Swedish",
-  "Danish",
-  "Norwegian",
-  "Finnish",
-  "Icelandic",
-];
+import { loadFontBytes, needsUnicodeFont, pdfLanguageSupported } from "./fonts";
 
 export function pdfSupportsLanguage(name: string): boolean {
-  return PDF_TARGET_LANGUAGES.includes(name);
+  return pdfLanguageSupported(name);
 }
 
 interface Line {
@@ -154,7 +138,7 @@ async function extractLines(buffer: ArrayBuffer): Promise<{ lines: Line[]; pageC
   return { lines, pageCount };
 }
 
-export async function loadPdf(file: File): Promise<LoadedDoc> {
+export async function loadPdf(file: File, targetLang?: string): Promise<LoadedDoc> {
   const buffer = await file.arrayBuffer();
   // pdf.js detaches the ArrayBuffer it's given; keep a copy for pdf-lib.
   const forExtract = buffer.slice(0);
@@ -167,13 +151,35 @@ export async function loadPdf(file: File): Promise<LoadedDoc> {
       throw new Error("Translation count did not match the PDF. Please retry.");
     }
     const pdfDoc = await PDFDocument.load(buffer.slice(0));
-    const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+
+    // Pick the font: standard (WinAnsi) for Western targets, or an embedded
+    // Noto font for scripts the standard font can't render (Chinese, etc.).
+    let font: PDFFont;
+    let unicode = false;
+    if (targetLang && needsUnicodeFont(targetLang)) {
+      const fontBytes = await loadFontBytes(targetLang);
+      if (fontBytes) {
+        pdfDoc.registerFontkit(fontkit);
+        try {
+          font = await pdfDoc.embedFont(fontBytes, { subset: true });
+        } catch {
+          // Subsetting can fail on some CJK builds — embed the whole font.
+          font = await pdfDoc.embedFont(fontBytes);
+        }
+        unicode = true;
+      } else {
+        font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+      }
+    } else {
+      font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    }
     const pages = pdfDoc.getPages();
 
     lines.forEach((line, i) => {
       const page = pages[line.page];
       if (!page) return;
-      const translated = sanitizeForStandardFont(translations[i] ?? line.text, font);
+      const raw = translations[i] ?? line.text;
+      const translated = unicode ? raw : sanitizeForStandardFont(raw, font);
       if (!translated.trim()) return;
 
       // Cover the original line.
