@@ -83,11 +83,14 @@ review + edit + export
 ## Build phases (each phase ships independently and is useful on its own)
 
 ### Phase 0 — Shared foundation
-- [ ] Promote `lib/ai/parse-job.ts`'s provider fallback into a general
-      `lib/ai/router.ts` (Gemini → Anthropic → offline), used by both job
-      auto-fill and translation.
-- [ ] `lib/ai/translate.ts` — segment translation with domain/glossary prompt,
-      batching, and 429-aware retry.
+- [x] `lib/ai/translate.ts` — segment translation (Gemini → Anthropic),
+      batching, split-and-retry on failure/length-mismatch, 429 handling.
+- [x] **Domain auto-detect + glossary is a core pre-translation step** (not a
+      later add-on): `lib/ai/glossaries.ts` holds per-domain terminology +
+      register rules; `detectDomainAndLanguage()` classifies the document on
+      upload; the matching glossary is injected into every translation call so
+      terminology stays consistent and in-domain (the Cipher-style quality
+      win the user asked for). Users can override the detected domain.
 - [ ] Migration: `doc_jobs` table (id, user_id, filename, source_lang,
       target_lang, status, progress, page_count, result_path, created_at) + RLS
       (owner-only) + per-user daily page quota function.
@@ -111,11 +114,24 @@ review + edit + export
       rectangles over original text spans, render translated text in place.
 - [ ] Export translated PDF; optional DOCX export for editing.
 
-### Phase 3 — Scanned PDF / images — OCR path (review-required)
-- [ ] Browser: render page to canvas, run `tesseract.js` → words + bboxes +
-      detected language.
-- [ ] Translate; overlay translated text onto the page image within boxes.
-- [ ] Clearly flag output as "machine OCR — verify before sending."
+### Phase 3 — Scanned PDF / images — OCR + faithful rebuild, then translate
+Requested behaviour: for a scan/photo, first **recreate the document as an
+editable file that mirrors the original** (layout, font size, bold/italic,
+positions, embedded logos/images), and only **then** translate that clean
+editable copy.
+- [ ] Browser: render page to canvas, run `tesseract.js` → words + bounding
+      boxes + estimated font size + detected language.
+- [ ] **Reconstruct → editable DOCX** (via `docx`) that mirrors the scan:
+      same layout blocks, font *size*, bold/italic, positions, and re-embedded
+      images/logos. Honest limit of free tools: the *exact* original typeface
+      can't be reliably identified from pixels, so match a close family
+      (serif→Times-like, sans→Arial-like). Output is visually near-identical
+      and fully editable, flagged for a quick human glance.
+- [ ] Offer the faithful **untranslated** rebuild as its own output (a useful
+      "scan → editable Word" tool on its own), then run translation on it.
+- [ ] Also overlay-translate the original PDF where a PDF (not Word) output is
+      wanted; keep font size/box fit.
+- [ ] Clearly flag OCR output as "machine OCR — verify before sending."
 
 ### Phase 4 — Review, edit & polish
 - [ ] Side-by-side original vs. translated viewer.
