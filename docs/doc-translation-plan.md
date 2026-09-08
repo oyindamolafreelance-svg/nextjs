@@ -113,14 +113,19 @@ review + edit + export
       original lines with white boxes, render the translation in place.
 - [x] Export translated PDF; uniform pipeline shape shared with Office
       (`lib/docs/index.ts`, `lib/docs/types.ts`).
-- Known limits (surfaced in the UI, to lift later): PDF standard fonts
-      (WinAnsi) → Western-European target languages only for now; other scripts
-      need an embedded Unicode font (follow-up). Best on white-background PDFs.
-      Scanned PDFs (no text layer) are Phase 3. **Needs a real-browser smoke
-      test on a sample PDF** — the pure geometry/logic is unit-checked, but
-      pdf.js worker + overlay rendering can only be verified in a browser.
-- [ ] Follow-up: embed a bundled Noto font (fontkit) for full-script PDF output
-      + optional editable-DOCX export from a PDF.
+- [x] **Embedded Unicode fonts** (`lib/docs/fonts.ts` + `@pdf-lib/fontkit`):
+      non-Western targets (Chinese, Japanese, Korean, Cyrillic, Greek, Arabic,
+      Hebrew, Devanagari, Thai, Latin-extended/African) now render in PDF output
+      by fetching a Noto font at runtime and subsetting it into the PDF. Western
+      targets keep the lighter standard font. Font CDN is overridable via
+      `NEXT_PUBLIC_FONT_BASE`; falls back jsDelivr → unpkg.
+- Known limits (surfaced in the UI): best on white-background PDFs; a few
+      languages with no Noto mapping yet (e.g. Mongolian, Khmer, Lao, Pashto)
+      stay blocked for *digital* PDFs (they work via Office/scan→Word). **Needs
+      a real-browser smoke test** — pdf.js rendering and the runtime font fetch
+      can only be verified in a browser.
+- [ ] Follow-up: optional editable-DOCX export from a PDF; bundle fonts locally
+      if the CDN fetch proves unreliable in production.
 
 ### Phase 3 — Scanned PDF / images — OCR + editable rebuild, then translate ✅ (v1)
 Requested behaviour: for a scan/photo, rebuild it as an **editable file that

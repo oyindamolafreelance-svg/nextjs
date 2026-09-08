@@ -145,6 +145,7 @@ export function TranslateClient({
       try {
         doc = await loadDocument(file, {
           sourceLang,
+          targetLang,
           onOcrProgress: (frac, label) => {
             setPhase("ocr");
             setProgress(Math.round(frac * 100));
