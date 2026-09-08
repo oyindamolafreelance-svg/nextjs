@@ -11,6 +11,7 @@ export async function Nav() {
     links.push(
       { href: "/jobs", label: "Jobs" },
       { href: "/post-job", label: "Post a job" },
+      { href: "/tools/translate", label: "Translate" },
       { href: "/my-posts", label: "My posts" },
       { href: "/saved", label: "Saved" },
       { href: "/progress", label: "Progress" },
