@@ -143,12 +143,16 @@ mirrors the original**, then translate that clean copy.
       original PDF when PDF (not Word) output is wanted.
 
 ### Phase 4 — Review, edit & polish
-- [ ] Side-by-side original vs. translated viewer.
-- [ ] Inline edit of any segment → live re-render before export.
-- [ ] Export menu: PDF / DOCX / PPTX / XLSX (per source type).
-- [ ] Per-domain glossary manager (legal, medical, IT, gaming…) injected into
-      the translate prompt — the real differentiator, per spec §1.5.
-- [ ] Low-resource-pair warning banner (e.g. Mongolian) → mandatory review.
+- [x] **Side-by-side original vs. translated review step** before the file is
+      built: every segment shown with an editable box; edits flow into the
+      rebuild (`app/tools/translate/TranslateClient.tsx`). Translation is marked
+      complete once it succeeds; the build happens on "Build & download".
+- [x] Inputs lock during review so the target language can't drift out of sync.
+- [x] Low-resource-pair warning banner → mandatory review (from Phase 1).
+- [ ] Per-domain **custom glossary manager** (admin-editable terms stored in the
+      DB, injected alongside the built-in glossary) — the next differentiator.
+- [ ] A translation-history page from `doc_jobs` (member sees past jobs).
+- [ ] Reconstruction upgrades from Phase 3 (logos/figures, bold/italic, fonts).
 
 ### Phase 5 (optional, later) — heavier lift
 - [ ] Move OCR/large jobs to a free GitHub-Actions worker (we already run one

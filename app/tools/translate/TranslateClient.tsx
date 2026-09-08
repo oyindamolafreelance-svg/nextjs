@@ -11,7 +11,16 @@ import { LANGUAGES, isLowResource } from "@/lib/docs/languages";
 import { DOMAINS } from "@/lib/ai/glossaries";
 import { startDocJob, finishDocJob } from "@/lib/actions/doc";
 
-type Phase = "idle" | "reading" | "ocr" | "detecting" | "translating" | "done" | "error";
+type Phase =
+  | "idle"
+  | "reading"
+  | "ocr"
+  | "detecting"
+  | "translating"
+  | "review"
+  | "building"
+  | "done"
+  | "error";
 
 // How many paragraph segments to send per request — keeps each serverless call
 // well under the function timeout.
@@ -21,6 +30,13 @@ interface DownloadReady {
   url: string;
   filename: string;
   ocr: boolean;
+}
+
+interface ReviewState {
+  originals: string[];
+  translations: string[];
+  ocr: boolean;
+  outputExt?: string;
 }
 
 export function TranslateClient({
@@ -45,19 +61,36 @@ export function TranslateClient({
   const [error, setError] = useState<string | null>(null);
   const [download, setDownload] = useState<DownloadReady | null>(null);
   const [ocrLabel, setOcrLabel] = useState("");
+  const [review, setReview] = useState<ReviewState | null>(null);
+  const buildRef = useRef<((t: string[]) => Promise<Blob>) | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const busy =
-    phase === "reading" || phase === "ocr" || phase === "detecting" || phase === "translating";
+    phase === "reading" ||
+    phase === "ocr" ||
+    phase === "detecting" ||
+    phase === "translating" ||
+    phase === "building";
   const remaining = Math.max(0, allowance - used);
+  // Inputs are locked once processing starts and while reviewing/finished, so
+  // the target language can't drift out of sync with an already-translated doc.
+  const locked = busy || phase === "review" || phase === "done";
 
   function reset() {
     setPhase("idle");
     setProgress(0);
     setDetected(null);
     setError(null);
+    setReview(null);
+    buildRef.current = null;
     if (download) URL.revokeObjectURL(download.url);
     setDownload(null);
+  }
+
+  function editTranslation(i: number, value: string) {
+    setReview((r) =>
+      r ? { ...r, translations: r.translations.map((t, idx) => (idx === i ? value : t)) } : r
+    );
   }
 
   const isPdfFile = Boolean(file && file.name.toLowerCase().endsWith(".pdf"));
@@ -182,20 +215,40 @@ export function TranslateClient({
         setProgress(Math.round((done / all.length) * 100));
       }
 
-      // 5. Rebuild the file and offer the download.
-      const blob = await doc.build(output);
-      const url = URL.createObjectURL(blob);
-      setDownload({
-        url,
-        filename: outName(file.name, targetLang, doc.outputExt),
+      // 5. Hand off to the review step: the member can edit any segment before
+      //    the file is rebuilt. Translation itself succeeded, so mark complete.
+      buildRef.current = doc.build;
+      setReview({
+        originals: all,
+        translations: output,
         ocr: Boolean(doc.ocr),
+        outputExt: doc.outputExt,
       });
-      setPhase("done");
+      setPhase("review");
       await finishDocJob(jobId, "complete");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong. Please try again.");
       setPhase("error");
       if (jobId) await finishDocJob(jobId, "error").catch(() => {});
+    }
+  }
+
+  async function buildAndDownload() {
+    if (!review || !buildRef.current || !file) return;
+    setPhase("building");
+    setError(null);
+    try {
+      const blob = await buildRef.current(review.translations);
+      const url = URL.createObjectURL(blob);
+      setDownload({
+        url,
+        filename: outName(file.name, targetLang, review.outputExt),
+        ocr: review.ocr,
+      });
+      setPhase("done");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't build the file. Please try again.");
+      setPhase("review");
     }
   }
 
@@ -219,7 +272,7 @@ export function TranslateClient({
           ref={inputRef}
           type="file"
           accept=".docx,.pptx,.xlsx,.pdf,.png,.jpg,.jpeg,.webp"
-          disabled={busy}
+          disabled={locked}
           onChange={(e) => onPick(e.target.files?.[0] ?? null)}
           className="block w-full text-sm file:mr-3 file:rounded-md file:border-0 file:bg-[color:var(--brand)] file:px-4 file:py-2 file:text-sm file:font-medium file:text-white"
         />
@@ -243,7 +296,7 @@ export function TranslateClient({
           <select
             className="input"
             value={targetLang}
-            disabled={busy}
+            disabled={locked}
             onChange={(e) => setTargetLang(e.target.value)}
           >
             {LANGUAGES.map((l) => (
@@ -259,7 +312,7 @@ export function TranslateClient({
           <select
             className="input"
             value={sourceLang}
-            disabled={busy}
+            disabled={locked}
             onChange={(e) => setSourceLang(e.target.value)}
           >
             <option value="auto">Auto-detect</option>
@@ -275,7 +328,7 @@ export function TranslateClient({
           <select
             className="input"
             value={domain}
-            disabled={busy}
+            disabled={locked}
             onChange={(e) => setDomain(e.target.value)}
           >
             <option value="auto">Auto-detect</option>
@@ -319,25 +372,27 @@ export function TranslateClient({
       )}
 
       {/* Action */}
-      <div className="flex items-center gap-3">
-        <button
-          type="button"
-          className="btn btn-primary"
-          disabled={!file || busy || (!unlimited && remaining <= 0)}
-          onClick={run}
-        >
-          {phase === "reading" && "Reading…"}
-          {phase === "ocr" && `Reading text (OCR)… ${progress}%`}
-          {phase === "detecting" && "Detecting domain…"}
-          {phase === "translating" && `Translating… ${progress}%`}
-          {(phase === "idle" || phase === "done" || phase === "error") && "Translate document"}
-        </button>
-        {(phase === "done" || phase === "error") && (
-          <button type="button" className="btn btn-secondary" onClick={reset}>
-            Start over
+      {phase !== "review" && phase !== "building" && phase !== "done" && (
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={!file || busy || (!unlimited && remaining <= 0)}
+            onClick={run}
+          >
+            {phase === "reading" && "Reading…"}
+            {phase === "ocr" && `Reading text (OCR)… ${progress}%`}
+            {phase === "detecting" && "Detecting domain…"}
+            {phase === "translating" && `Translating… ${progress}%`}
+            {(phase === "idle" || phase === "error") && "Translate document"}
           </button>
-        )}
-      </div>
+          {phase === "error" && (
+            <button type="button" className="btn btn-secondary" onClick={reset}>
+              Start over
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Progress bar */}
       {(phase === "translating" || phase === "ocr") && (
@@ -350,6 +405,55 @@ export function TranslateClient({
               className="h-full rounded-full bg-[color:var(--brand)] transition-all"
               style={{ width: `${progress}%` }}
             />
+          </div>
+        </div>
+      )}
+
+      {/* Review & edit */}
+      {(phase === "review" || phase === "building") && review && (
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-3 rounded-lg border divider bg-[color:var(--surface)] p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="font-medium">Review the translation</p>
+              <p className="text-sm muted">
+                {review.translations.length} segment
+                {review.translations.length === 1 ? "" : "s"} · edit anything
+                below, then build your file.
+                {review.ocr && " Rebuilt from a scan (OCR) — check for misreads."}
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                className="btn btn-secondary"
+                disabled={phase === "building"}
+                onClick={reset}
+              >
+                Start over
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={phase === "building"}
+                onClick={buildAndDownload}
+              >
+                {phase === "building" ? "Building…" : "Build & download"}
+              </button>
+            </div>
+          </div>
+
+          <div className="flex max-h-[60vh] flex-col divide-y divide-[color:var(--border)] overflow-y-auto rounded-lg border divider">
+            {review.originals.map((orig, i) => (
+              <div key={i} className="grid gap-2 p-3 sm:grid-cols-2">
+                <p className="whitespace-pre-wrap text-sm muted">{orig}</p>
+                <textarea
+                  className="input min-h-[3rem] resize-y text-sm"
+                  value={review.translations[i]}
+                  disabled={phase === "building"}
+                  onChange={(e) => editTranslation(i, e.target.value)}
+                />
+              </div>
+            ))}
           </div>
         </div>
       )}
