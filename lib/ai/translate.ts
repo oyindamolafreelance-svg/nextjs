@@ -27,7 +27,10 @@ const MAX_CHARS_PER_BATCH = 4000;
 
 function hasProvider(): boolean {
   return Boolean(
-    process.env.GEMINI_API_KEY || process.env.GROQ_API_KEY || process.env.ANTHROPIC_API_KEY
+    process.env.GEMINI_API_KEY ||
+      process.env.GROQ_API_KEY ||
+      process.env.OPENROUTER_API_KEY ||
+      process.env.ANTHROPIC_API_KEY
   );
 }
 
@@ -214,6 +217,8 @@ async function callProvider(system: string, user: string): Promise<string> {
   const providers: { name: string; fn: () => Promise<string> }[] = [];
   if (process.env.GEMINI_API_KEY) providers.push({ name: "gemini", fn: () => geminiJson(system, user) });
   if (process.env.GROQ_API_KEY) providers.push({ name: "groq", fn: () => groqJson(system, user) });
+  if (process.env.OPENROUTER_API_KEY)
+    providers.push({ name: "openrouter", fn: () => openrouterJson(system, user) });
   if (process.env.ANTHROPIC_API_KEY)
     providers.push({ name: "anthropic", fn: () => anthropicJson(system, user) });
 
@@ -241,9 +246,43 @@ const RETRYABLE = new Set([429, 500, 502, 503, 504]);
 // ---------------------------------------------------------------------------
 // Provider calls (JSON-mode). Both return the raw text body.
 // ---------------------------------------------------------------------------
+// Candidate Gemini models tried in order. Different models have separate free-
+// tier capacity, so when one is overloaded (503) another often works — all on
+// the same key. The configured GEMINI_MODEL is tried first; unknown names just
+// 404 and are skipped. Override the whole list with GEMINI_MODELS (comma-sep).
+const GEMINI_MODELS: string[] = (
+  process.env.GEMINI_MODELS
+    ? process.env.GEMINI_MODELS.split(",")
+    : [
+        GEMINI_MODEL,
+        "gemini-2.5-flash",
+        "gemini-2.0-flash",
+        "gemini-2.5-flash-lite",
+        "gemini-1.5-flash",
+        "gemini-flash-latest",
+      ]
+)
+  .map((m) => m.trim())
+  .filter((m, i, a) => m && a.indexOf(m) === i);
+
 async function geminiJson(system: string, user: string): Promise<string> {
+  let lastErr: unknown = null;
+  for (const model of GEMINI_MODELS) {
+    try {
+      return await geminiOnce(model, system, user);
+    } catch (err) {
+      lastErr = err;
+      console.warn(`[translate] Gemini model ${model} unavailable, trying next:`, err);
+    }
+  }
+  throw lastErr instanceof TranslateError
+    ? lastErr
+    : new TranslateError("The AI is overloaded right now. Please try again in a moment.");
+}
+
+async function geminiOnce(model: string, system: string, user: string): Promise<string> {
   const apiKey = process.env.GEMINI_API_KEY as string;
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
   const body = JSON.stringify({
     systemInstruction: { parts: [{ text: system }] },
     contents: [{ role: "user", parts: [{ text: user }] }],
@@ -254,9 +293,9 @@ async function geminiJson(system: string, user: string): Promise<string> {
     },
   });
 
-  // Retry transient overload/rate-limit (503/429/5xx) with backoff before
-  // giving up — Gemini's free tier throws 503 "model overloaded" under load.
-  const MAX_ATTEMPTS = 4;
+  // Retry transient overload/rate-limit (503/429/5xx) a couple of times before
+  // giving up on this model (the caller then tries the next model).
+  const MAX_ATTEMPTS = 2;
   let lastStatus = 0;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     let res: Response;
@@ -267,9 +306,8 @@ async function geminiJson(system: string, user: string): Promise<string> {
         body,
       });
     } catch {
-      // Network hiccup — retry a couple of times, then fail.
       if (attempt < MAX_ATTEMPTS) {
-        await sleep(500 * 2 ** (attempt - 1));
+        await sleep(400 * attempt);
         continue;
       }
       throw new TranslateError("Couldn't reach the translation service. Please try again.");
@@ -281,33 +319,25 @@ async function geminiJson(system: string, user: string): Promise<string> {
       const out = Array.isArray(parts)
         ? parts.map((p: { text?: string }) => p?.text ?? "").join("")
         : "";
-      if (!out) throw new TranslateError("The translation service returned no text. Please try again.");
+      if (!out) throw new TranslateError("The translation service returned no text.");
       return out;
     }
 
     lastStatus = res.status;
     const detail = await res.text().catch(() => "");
-    console.error("[translate] Gemini error", {
-      status: res.status,
-      attempt,
-      body: detail.slice(0, 300),
-    });
+    console.error("[translate] Gemini error", { model, status: res.status, attempt, body: detail.slice(0, 200) });
 
     if (RETRYABLE.has(res.status) && attempt < MAX_ATTEMPTS) {
-      // Backoff: 0.8s, 1.6s, 3.2s (+ jitter).
-      await sleep(800 * 2 ** (attempt - 1) + Math.random() * 300);
+      await sleep(700 * attempt + Math.random() * 300);
       continue;
     }
     break;
   }
 
   if (lastStatus === 429) {
-    throw new TranslateError("The free translation tier is rate-limited right now. Please retry in a moment.");
+    throw new TranslateError("Rate-limited (429) on this model.");
   }
-  if (lastStatus === 503) {
-    throw new TranslateError("The AI is overloaded right now (503). Please try again in a moment.");
-  }
-  throw new TranslateError(`Translation service error (${lastStatus || "network"}). Please try again.`);
+  throw new TranslateError(`Gemini error (${lastStatus || "network"}) on ${model}.`);
 }
 
 // Groq — free, no credit card. OpenAI-compatible chat completions. We don't use
@@ -355,6 +385,54 @@ async function groqJson(system: string, user: string): Promise<string> {
     console.error("[translate] Groq error", { status: res.status, attempt, body: detail.slice(0, 300) });
     if (RETRYABLE.has(res.status) && attempt < MAX_ATTEMPTS) {
       await sleep(800 * 2 ** (attempt - 1) + Math.random() * 300);
+      continue;
+    }
+    break;
+  }
+  throw new TranslateError(`Translation service error (${lastStatus || "network"}). Please try again.`);
+}
+
+// OpenRouter — aggregates many models behind one key, including free ones.
+// OpenAI-compatible. Default model is a free Llama; override with OPENROUTER_MODEL.
+const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL ?? "meta-llama/llama-3.3-70b-instruct:free";
+async function openrouterJson(system: string, user: string): Promise<string> {
+  const apiKey = process.env.OPENROUTER_API_KEY as string;
+  const body = JSON.stringify({
+    model: OPENROUTER_MODEL,
+    temperature: 0.2,
+    messages: [
+      { role: "system", content: system },
+      { role: "user", content: user },
+    ],
+  });
+  const MAX_ATTEMPTS = 3;
+  let lastStatus = 0;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    let res: Response;
+    try {
+      res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+        body,
+      });
+    } catch {
+      if (attempt < MAX_ATTEMPTS) {
+        await sleep(500 * attempt);
+        continue;
+      }
+      throw new TranslateError("Couldn't reach the translation service. Please try again.");
+    }
+    if (res.ok) {
+      const json = await res.json().catch(() => null);
+      const out: string = json?.choices?.[0]?.message?.content ?? "";
+      if (!out) throw new TranslateError("The translation service returned no text.");
+      return out;
+    }
+    lastStatus = res.status;
+    const detail = await res.text().catch(() => "");
+    console.error("[translate] OpenRouter error", { status: res.status, attempt, body: detail.slice(0, 200) });
+    if (RETRYABLE.has(res.status) && attempt < MAX_ATTEMPTS) {
+      await sleep(700 * attempt + Math.random() * 300);
       continue;
     }
     break;
