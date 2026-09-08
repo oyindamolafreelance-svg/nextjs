@@ -53,7 +53,18 @@ export async function startDocJob(input: StartDocInput): Promise<StartDocResult>
     .single();
 
   if (error || !data) {
-    return { ok: false, error: "Couldn't start the translation job." };
+    console.error("[startDocJob] insert failed", error);
+    // Surface the real reason so setup issues are obvious. The most common one
+    // is the migration not having been run yet (table/functions missing).
+    if (error?.code === "42P01" || /doc_jobs.*does not exist/i.test(error?.message ?? "")) {
+      return {
+        ok: false,
+        error:
+          "The document-translation tables aren't set up yet. Run migration 0013_doc_translation.sql in the Supabase SQL Editor, then try again.",
+      };
+    }
+    const detail = error?.message ? ` (${error.message})` : "";
+    return { ok: false, error: `Couldn't start the translation job${detail}` };
   }
   return { ok: true, jobId: data.id as string, used: usedN + 1, allowance: allowanceN };
 }
