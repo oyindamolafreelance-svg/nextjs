@@ -1,4 +1,5 @@
 import { DOMAINS, domainInstruction, type DomainId } from "./glossaries";
+import { keylessTranslateSegments } from "./keyless-translate";
 
 // Shared translation engine for the document translator. Runs server-side
 // (route handlers) and uses whichever free-tier providers are configured, in
@@ -80,12 +81,20 @@ export async function translateSegments(
   segments: string[],
   opts: TranslateOptions
 ): Promise<string[]> {
-  if (!hasProvider()) {
-    throw new TranslateError(
-      "Translation isn't configured on the server yet (no AI key). Add GEMINI_API_KEY to enable it."
-    );
+  // Preferred path: LLM providers (better quality + domain glossary). If none
+  // is configured, or they all fail/overload, fall back to the keyless engine
+  // so the tool still works with no API key at all.
+  if (hasProvider()) {
+    try {
+      return await llmTranslate(segments, opts);
+    } catch (err) {
+      console.warn("[translate] LLM providers unavailable, using keyless engine:", err);
+    }
   }
+  return keylessTranslateSegments(segments, opts.sourceLang, opts.targetLang);
+}
 
+async function llmTranslate(segments: string[], opts: TranslateOptions): Promise<string[]> {
   const out = new Array<string>(segments.length);
   // Indexes that actually need translating (skip blanks & pure placeholders).
   const todo: number[] = [];
