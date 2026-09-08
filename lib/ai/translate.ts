@@ -51,9 +51,7 @@ export async function detectDomainAndLanguage(sample: string): Promise<Detection
     return { domain: "general", domainLabel: "General", sourceLanguage: "unknown" };
   }
   try {
-    const raw = process.env.GEMINI_API_KEY
-      ? await geminiJson(DETECT_SYSTEM, `Excerpt:\n\n${text}`)
-      : await anthropicJson(DETECT_SYSTEM, `Excerpt:\n\n${text}`);
+    const raw = await callProvider(DETECT_SYSTEM, `Excerpt:\n\n${text}`);
     const obj = JSON.parse(extractJson(raw)) as Record<string, unknown>;
     const id = String(obj.domain ?? "general");
     const def = DOMAINS.find((d) => d.id === id) ?? DOMAINS[0];
@@ -160,9 +158,7 @@ async function translateBatch(
 
   let raw: string;
   try {
-    raw = process.env.GEMINI_API_KEY
-      ? await geminiJson(system, user)
-      : await anthropicJson(system, user);
+    raw = await callProvider(system, user);
   } catch (err) {
     // If the whole batch fails and it's splittable, split once and retry each
     // half — a smaller request often succeeds on a busy free tier.
@@ -203,44 +199,105 @@ async function translateBatch(
 }
 
 // ---------------------------------------------------------------------------
+// Provider orchestration: try Gemini (with its own retry/backoff on transient
+// overload), then fall back to Anthropic if a key is configured. This keeps a
+// busy free tier (503/overloaded) from failing the whole translation.
+// ---------------------------------------------------------------------------
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+async function callProvider(system: string, user: string): Promise<string> {
+  const gemini = process.env.GEMINI_API_KEY;
+  const anthropic = process.env.ANTHROPIC_API_KEY;
+  if (gemini) {
+    try {
+      return await geminiJson(system, user);
+    } catch (err) {
+      if (anthropic) {
+        console.warn("[translate] Gemini failed, falling back to Anthropic:", err);
+        return await anthropicJson(system, user);
+      }
+      throw err;
+    }
+  }
+  if (anthropic) return await anthropicJson(system, user);
+  throw new TranslateError(
+    "Translation isn't configured on the server yet (no AI key)."
+  );
+}
+
+// Statuses worth retrying: rate-limit + transient server/overload errors.
+const RETRYABLE = new Set([429, 500, 502, 503, 504]);
+
+// ---------------------------------------------------------------------------
 // Provider calls (JSON-mode). Both return the raw text body.
 // ---------------------------------------------------------------------------
 async function geminiJson(system: string, user: string): Promise<string> {
   const apiKey = process.env.GEMINI_API_KEY as string;
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
-  let res: Response;
-  try {
-    res = await fetch(url, {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-goog-api-key": apiKey },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: system }] },
-        contents: [{ role: "user", parts: [{ text: user }] }],
-        generationConfig: {
-          temperature: 0.2,
-          maxOutputTokens: 8192,
-          responseMimeType: "application/json",
-        },
-      }),
-    });
-  } catch {
-    throw new TranslateError("Couldn't reach the translation service. Please try again.");
-  }
-  if (!res.ok) {
-    const detail = await res.text().catch(() => "");
-    console.error("[translate] Gemini error", { status: res.status, body: detail.slice(0, 400) });
-    if (res.status === 429) {
-      throw new TranslateError("The free translation tier is rate-limited right now. Please retry in a moment.");
+  const body = JSON.stringify({
+    systemInstruction: { parts: [{ text: system }] },
+    contents: [{ role: "user", parts: [{ text: user }] }],
+    generationConfig: {
+      temperature: 0.2,
+      maxOutputTokens: 8192,
+      responseMimeType: "application/json",
+    },
+  });
+
+  // Retry transient overload/rate-limit (503/429/5xx) with backoff before
+  // giving up — Gemini's free tier throws 503 "model overloaded" under load.
+  const MAX_ATTEMPTS = 4;
+  let lastStatus = 0;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-goog-api-key": apiKey },
+        body,
+      });
+    } catch {
+      // Network hiccup — retry a couple of times, then fail.
+      if (attempt < MAX_ATTEMPTS) {
+        await sleep(500 * 2 ** (attempt - 1));
+        continue;
+      }
+      throw new TranslateError("Couldn't reach the translation service. Please try again.");
     }
-    throw new TranslateError(`Translation service error (${res.status}). Please try again.`);
+
+    if (res.ok) {
+      const json = await res.json().catch(() => null);
+      const parts = json?.candidates?.[0]?.content?.parts;
+      const out = Array.isArray(parts)
+        ? parts.map((p: { text?: string }) => p?.text ?? "").join("")
+        : "";
+      if (!out) throw new TranslateError("The translation service returned no text. Please try again.");
+      return out;
+    }
+
+    lastStatus = res.status;
+    const detail = await res.text().catch(() => "");
+    console.error("[translate] Gemini error", {
+      status: res.status,
+      attempt,
+      body: detail.slice(0, 300),
+    });
+
+    if (RETRYABLE.has(res.status) && attempt < MAX_ATTEMPTS) {
+      // Backoff: 0.8s, 1.6s, 3.2s (+ jitter).
+      await sleep(800 * 2 ** (attempt - 1) + Math.random() * 300);
+      continue;
+    }
+    break;
   }
-  const json = await res.json().catch(() => null);
-  const parts = json?.candidates?.[0]?.content?.parts;
-  const out = Array.isArray(parts)
-    ? parts.map((p: { text?: string }) => p?.text ?? "").join("")
-    : "";
-  if (!out) throw new TranslateError("The translation service returned no text. Please try again.");
-  return out;
+
+  if (lastStatus === 429) {
+    throw new TranslateError("The free translation tier is rate-limited right now. Please retry in a moment.");
+  }
+  if (lastStatus === 503) {
+    throw new TranslateError("The AI is overloaded right now (503). Please try again in a moment.");
+  }
+  throw new TranslateError(`Translation service error (${lastStatus || "network"}). Please try again.`);
 }
 
 async function anthropicJson(system: string, user: string): Promise<string> {
